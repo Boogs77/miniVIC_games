@@ -1,0 +1,9 @@
+{
+  "_default":        [["wait", 120], ["shot", "title"], ["mash", 900], ["play", 600], ["shot", "game"]],
+  "tank":            [["wait", 120], ["shot", "title"], ["mash", 1800], ["play", 600], ["shot", "game"]],
+  "1vs1":            [["wait", 120], ["shot", "title"], ["mash", 1800], ["play", 600], ["shot", "game"]],
+  "centipede":       [["wait", 120], ["shot", "title"], ["mash", 1800], ["play", 600], ["shot", "game"]],
+  "missile_command": [["wait", 120], ["shot", "title"], ["mash", 600], ["play", 600], ["shot", "game"]],
+  "lunar_lander":    [["wait", 120], ["shot", "title"], ["mash", 130], ["wait", 80], ["shot", "game"]],
+  "the_warriors":    [["wait", 120], ["shot", "title"], ["mash", 600], ["play", 600], ["shot", "game"]]
+}

@@ -8,6 +8,9 @@
 # oppure dalla prima riga del file vasm.path (escluso da git).
 # Se esiste il file copy.path (escluso da git), i .asm e i .bin
 # assemblati vengono copiati anche nella cartella indicata.
+# Con Node.js installato, ogni gioco assemblato viene fatto girare
+# nell'emulatore (tools\screenshots.js) e gli screenshot finiscono
+# in screenshots\ e su GitHub insieme ai .bin.
 
 param([string[]]$Files, [switch]$NoPublish)
 
@@ -47,6 +50,19 @@ if (Test-Path copy.path) {
   } else {
     Write-Host "Cartella di copia non trovata: $dest" -ForegroundColor Red
   }
+}
+
+# ---------------- screenshot nell'emulatore ----------------
+if (Get-Command node -ErrorAction SilentlyContinue) {
+  $games = $Files | ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_) }
+  node tools\screenshots.js $games
+  if ($LASTEXITCODE -eq 0) {
+    $built += $games | ForEach-Object { Get-ChildItem "screenshots\$($_)_*.png" } | ForEach-Object { "screenshots\$($_.Name)" }
+  } else {
+    Write-Host "Screenshot non riusciti (la build prosegue)" -ForegroundColor Yellow
+  }
+} else {
+  Write-Host "Node.js non trovato: niente screenshot" -ForegroundColor Yellow
 }
 if ($NoPublish) { exit 0 }
 

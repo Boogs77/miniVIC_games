@@ -61,7 +61,54 @@ To rebuild them:
 1. Write the full path of `vasm6502_oldstyle.exe` in a file named `vasm.path` (or set the `VASM` environment variable).
 2. Run `build.bat` to assemble all games, or `build.bat tank.asm` for a single one. In VS Code, press **Ctrl+Shift+B** to build the open file.
 
-The script assembles every file into `bin/`, optionally copies the sources and binaries to the local folder written in `copy.path`, then commits and pushes the updated binaries. Use `build.ps1 -NoPublish` to build without publishing.
+The script assembles every file into `bin/`, optionally copies the sources and binaries to the local folder written in `copy.path`, runs each game in the emulator to update its screenshots, then commits and pushes the updated binaries and screenshots. Use `build.ps1 -NoPublish` to build without publishing.
+
+### 🖥️ Emulator & Screenshots
+The [`tools`](tools) folder contains a small **miniVIC emulator** written in Node.js (no dependencies): W65C02S CPU, TMS9918A video with sprites, VDP interrupt on NMI and the two joysticks (no audio).
+* `node tools/screenshots.js` runs every game and saves its screenshots in [`screenshots`](screenshots).
+* `tools/screenshots.json` defines, for each game, the input sequence (wait, button presses, random play) and when to take each picture.
+
+---
+
+## 🖼️ Screenshots
+
+Captured with the miniVIC emulator in [`tools`](tools): title screen and gameplay.
+
+### Tank vs Tank
+<p align="center">
+  <img src="screenshots/tank_title.png" width="45%" />
+  <img src="screenshots/tank_game.png" width="45%" />
+</p>
+
+### 1 vs 1 Basketball
+<p align="center">
+  <img src="screenshots/1vs1_title.png" width="45%" />
+  <img src="screenshots/1vs1_game.png" width="45%" />
+</p>
+
+### Centipede
+<p align="center">
+  <img src="screenshots/centipede_title.png" width="45%" />
+  <img src="screenshots/centipede_game.png" width="45%" />
+</p>
+
+### Missile Command
+<p align="center">
+  <img src="screenshots/missile_command_title.png" width="45%" />
+  <img src="screenshots/missile_command_game.png" width="45%" />
+</p>
+
+### Lunar Lander
+<p align="center">
+  <img src="screenshots/lunar_lander_title.png" width="45%" />
+  <img src="screenshots/lunar_lander_game.png" width="45%" />
+</p>
+
+### The Warriors
+<p align="center">
+  <img src="screenshots/the_warriors_title.png" width="45%" />
+  <img src="screenshots/the_warriors_game.png" width="45%" />
+</p>
 
 ---
 
