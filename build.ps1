@@ -6,6 +6,8 @@
 #
 # Il percorso di vasm6502_oldstyle.exe si legge dalla variabile VASM
 # oppure dalla prima riga del file vasm.path (escluso da git).
+# Se esiste il file copy.path (escluso da git), i .asm e i .bin
+# assemblati vengono copiati anche nella cartella indicata.
 
 param([string[]]$Files, [switch]$NoPublish)
 
@@ -34,6 +36,17 @@ foreach ($f in $Files) {
 if ($failed) {
   Write-Host "ERRORI in: $($failed -join ', ') - niente pubblicato" -ForegroundColor Red
   exit 1
+}
+
+# ---------------- copia nella cartella locale ----------------
+if (Test-Path copy.path) {
+  $dest = (Get-Content copy.path -TotalCount 1).Trim()
+  if (Test-Path $dest) {
+    Copy-Item -Path $built -Destination $dest -Force
+    Write-Host "Copiati in $dest" -ForegroundColor Green
+  } else {
+    Write-Host "Cartella di copia non trovata: $dest" -ForegroundColor Red
+  }
 }
 if ($NoPublish) { exit 0 }
 

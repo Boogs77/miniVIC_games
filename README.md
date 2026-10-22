@@ -61,7 +61,7 @@ To rebuild them:
 1. Write the full path of `vasm6502_oldstyle.exe` in a file named `vasm.path` (or set the `VASM` environment variable).
 2. Run `build.bat` to assemble all games, or `build.bat tank.asm` for a single one. In VS Code, press **Ctrl+Shift+B** to build the open file.
 
-The script assembles every file into `bin/`, then commits and pushes the updated binaries. Use `build.ps1 -NoPublish` to build without publishing.
+The script assembles every file into `bin/`, optionally copies the sources and binaries to the local folder written in `copy.path`, then commits and pushes the updated binaries. Use `build.ps1 -NoPublish` to build without publishing.
 
 ---
 
