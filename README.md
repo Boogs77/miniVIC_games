@@ -53,6 +53,18 @@ All games share the same layout:
 
 ---
 
+## 🛠️ Build
+
+The games are assembled with **vasm6502_oldstyle** (`-Fbin -dotdir -c02`). Ready-to-load binaries are in the [`bin`](bin) folder; each one starts at **$0FD0** (NMI trampoline) followed by the program at **$1000**.
+
+To rebuild them:
+1. Write the full path of `vasm6502_oldstyle.exe` in a file named `vasm.path` (or set the `VASM` environment variable).
+2. Run `build.bat` to assemble all games, or `build.bat tank.asm` for a single one. In VS Code, press **Ctrl+Shift+B** to build the open file.
+
+The script assembles every file into `bin/`, then commits and pushes the updated binaries. Use `build.ps1 -NoPublish` to build without publishing.
+
+---
+
 ## 🔗 Useful Links & Resources
 
 * **BO6502 System:** [65C02-based Modular Computer](https://github.com/Boogs77/BO6502_65C02-based_modular_computer)

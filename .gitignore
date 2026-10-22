@@ -1,7 +1,10 @@
-# file generati dall'assemblatore
-*.bin
+# file generati dall'assemblatore (i .bin in bin/ vengono pubblicati)
+a.out
 *.prg
 *.hex
 *.lst
 *.o
 *.map
+
+# percorso locale di vasm6502
+vasm.path
