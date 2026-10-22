@@ -2,7 +2,7 @@
 
 A collection of arcade games written in **65C02 assembly** for the **Boogs77-miniVIC**, a compact 8-bit computer built on the modular architecture of the [BO6502 System](https://github.com/Boogs77/BO6502_65C02-based_modular_computer). Every title uses the **TMS9918A** video processor for tile and sprite graphics and two **AY-3-8910** sound chips for stereo music and effects.
 
-> 🚧 The **miniVIC** hardware project (schematics, enclosure, firmware) will be published in its own repository on GitHub. This repository contains only the game software.
+> 🚧 The **miniVIC** hardware project (schematics, enclosure, firmware) will be published in its own repository: [miniVIC_65c02](https://github.com/Boogs77/miniVIC_65c02) (coming soon). This repository contains only the game software.
 
 ---
 
@@ -55,6 +55,7 @@ All games share the same layout:
 ## 🔗 Useful Links & Resources
 
 * **BO6502 System:** [65C02-based Modular Computer](https://github.com/Boogs77/BO6502_65C02-based_modular_computer)
+* **miniVIC:** [miniVIC 65C02 hardware project](https://github.com/Boogs77/miniVIC_65c02) (coming soon)
 * **miniPET:** [The sister project, miniPET 65C02](https://github.com/Boogs77/miniPET_65c02)
 * **Video Module:** [BO6502 VDU Reference](https://github.com/Boogs77/BO6502_65C02-based_modular_computer/tree/main/BO6502%20VDU)
 * **Audio Module:** [BO6502 AUDIO Reference](https://github.com/Boogs77/BO6502_65C02-based_modular_computer/tree/main/BO6502%20AUDIO)
