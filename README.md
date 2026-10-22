@@ -19,8 +19,6 @@ A collection of arcade games written in **65C02 assembly** for the **Boogs77-min
 
 Each source file starts with a header describing controls, rules and technical notes.
 
-👉 **[View the Full Games List (completed and planned)](gameslist.md)**
-
 ---
 
 ## 🧠 Hardware Requirements

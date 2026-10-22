@@ -9,3 +9,6 @@ a.out
 # percorso locale di vasm6502
 vasm.path
 copy.path
+
+# lista personale dei giochi da fare
+gameslist.md
