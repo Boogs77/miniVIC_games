@@ -1,0 +1,7 @@
+# file generati dall'assemblatore
+*.bin
+*.prg
+*.hex
+*.lst
+*.o
+*.map
