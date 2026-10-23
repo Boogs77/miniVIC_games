@@ -16,6 +16,10 @@ A collection of arcade games written in **65C02 assembly** for the **Boogs77-min
 | `missile_command.asm` | **Missile Command** | 1–2 | Defend 6 cities from incoming missiles using 3 bases. The second player can join at any time. Full bitmap graphics. |
 | `lunar_lander.asm` | **Lunar Lander** | 1 | Land the module softly on the moon pads: smaller pads pay more, plus a leftover fuel bonus. 6 moon maps, 3 landers. Full bitmap graphics. |
 | `the_warriors.asm` | **The Warriors** | 2 | Street Fighter style fighting game: 5 warriors, 6 stages, punch, kick, block and special move. Best of 3 rounds. |
+| `breakout.asm` | **Breakout** | 1–2 | Atari 1976: 8 rows of bricks in four colours, the ball speeds up and the paddle shrinks when you break through. Two walls, players take turns. |
+| `asteroids.asm` | **Asteroids** | 1–2 | Atari 1979: vector-style asteroids that split in three sizes, large and small saucers, hyperspace and the famous heartbeat. Players take turns. |
+| `space_invaders.asm` | **Space Invaders** | 1–2 | Taito 1978: 55 invaders that march one at a time, shields that crumble pixel by pixel, three kinds of bombs, mystery saucer and the four-note march. Colour bands of the cabinet overlay. |
+| `warlords.asm` | **Warlords** | 1–2 | Atari 1980: four castles, shields on an L-shaped track, catch and throw the fireball. 1 or 2 players against the computer castles; first to 3 rounds wins. |
 
 Each source file starts with a header describing controls, rules and technical notes.
 
@@ -108,6 +112,30 @@ Captured with the miniVIC emulator in [`tools`](tools): title screen and gamepla
 <p align="center">
   <img src="screenshots/the_warriors_title.png" width="45%" />
   <img src="screenshots/the_warriors_game.png" width="45%" />
+</p>
+
+### Breakout
+<p align="center">
+  <img src="screenshots/breakout_title.png" width="45%" />
+  <img src="screenshots/breakout_game.png" width="45%" />
+</p>
+
+### Asteroids
+<p align="center">
+  <img src="screenshots/asteroids_title.png" width="45%" />
+  <img src="screenshots/asteroids_game.png" width="45%" />
+</p>
+
+### Space Invaders
+<p align="center">
+  <img src="screenshots/space_invaders_title.png" width="45%" />
+  <img src="screenshots/space_invaders_game.png" width="45%" />
+</p>
+
+### Warlords
+<p align="center">
+  <img src="screenshots/warlords_title.png" width="45%" />
+  <img src="screenshots/warlords_game.png" width="45%" />
 </p>
 
 ---

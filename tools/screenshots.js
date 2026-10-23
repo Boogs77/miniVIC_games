@@ -10,6 +10,10 @@
 //   ["mash", n]               per n frame preme il tasto 1 di entrambi ogni mezzo secondo
 //                             (supera titoli con musica e schermate di selezione)
 //   ["play", n]               n frame di gioco con joystick casuali (entrambi i giocatori)
+//   ["track", n, {target, self, targetOffset, selfOffset, fire}]
+//                             n frame in cui il joystick insegue un oggetto: muove a sinistra /
+//                             destra finche' la X in memoria a "self" raggiunge quella a "target"
+//                             (indirizzi decimali in RAM, es. palla e racchetta); fire = spara
 //   ["shot", "nome"]          salva screenshots/<gioco>_<nome>.png
 // Comandi: up down left right fire fire2 (combinabili con "+", es. "right+fire")
 // Un gioco che non compare nel file usa la sequenza "_default".
@@ -59,6 +63,21 @@ function runGame(name, steps, outDir) {
     }
     else if (cmd === 'mash') {
       for (let i = 0; i < a; i++) { m.joy = (i % 30) < 6 ? [16, 16] : [0, 0]; m.runFrame(); }
+      m.joy = [0, 0];
+    }
+    else if (cmd === 'track') {
+      // b = { target: indirizzo X da seguire, self: indirizzo X del giocatore, offset, fire }
+      const t = b;
+      for (let i = 0; i < a; i++) {
+        const want = m.mem[t.target] + (t.targetOffset || 0);
+        const have = m.mem[t.self] + (t.selfOffset || 0);
+        let v = 0;
+        if (want < have - 2) v = BITS.left;
+        else if (want > have + 2) v = BITS.right;
+        if (t.fire && (i % 20) < 3) v |= BITS.fire;
+        m.joy = [v, v];
+        m.runFrame();
+      }
       m.joy = [0, 0];
     }
     else if (cmd === 'play') { for (let i = 0; i < a; i++) { randomJoy(); m.runFrame(); } m.joy = [0, 0]; }

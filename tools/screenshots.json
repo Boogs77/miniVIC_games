@@ -5,5 +5,7 @@
   "centipede":       [["wait", 120], ["shot", "title"], ["mash", 1800], ["play", 600], ["shot", "game"]],
   "missile_command": [["wait", 120], ["shot", "title"], ["mash", 600], ["play", 600], ["shot", "game"]],
   "lunar_lander":    [["wait", 120], ["shot", "title"], ["mash", 130], ["wait", 80], ["shot", "game"]],
-  "the_warriors":    [["wait", 120], ["shot", "title"], ["mash", 600], ["play", 600], ["shot", "game"]]
+  "the_warriors":    [["wait", 120], ["shot", "title"], ["mash", 600], ["play", 600], ["shot", "game"]],
+  "breakout":        [["wait", 60], ["shot", "title"], ["press", "p1", "fire"], ["track", 1500, {"target": 147, "self": 157, "targetOffset": 1, "selfOffset": 12, "fire": true}], ["shot", "game"]],
+  "asteroids":       [["wait", 120], ["shot", "title"], ["press", "p1", "fire"], ["wait", 110], ["press", "p1", "right", 9], ["mash", 100], ["press", "p1", "left", 15], ["mash", 70], ["shot", "game"]]
 }

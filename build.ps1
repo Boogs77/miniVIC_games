@@ -12,7 +12,7 @@
 # nell'emulatore (tools\screenshots.js) e gli screenshot finiscono
 # in screenshots\ e su GitHub insieme ai .bin.
 
-param([string[]]$Files, [switch]$NoPublish)
+param([switch]$NoPublish, [Parameter(ValueFromRemainingArguments = $true)][string[]]$Files)
 
 Set-Location $PSScriptRoot
 
