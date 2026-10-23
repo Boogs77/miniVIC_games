@@ -23,6 +23,7 @@ A collection of arcade games written in **65C02 assembly** for the **Boogs77-min
 | `defender.asm` | **Defender** | 1 | Williams 1981: a scrolling planet that wraps around, scanner, landers kidnapping humanoids, mutants, bombers, pods, swarmers and baiters; laser, smart bombs, hyperspace. |
 | `radar_scope.asm` | **Radar Scope** | 1–2 | Nintendo 1980: a field in perspective with a blue sky and a curved radar grid, 48 Gamma Raiders that hover forward, dive and drop decoys, and a damage meter that slows down the laser. Players take turns. |
 | `space_firebird.asm` | **Space Firebird** | 1–2 | Nintendo 1980: a scrolling starfield, Firebirds that arrive as comets, loop the loop and turn into Gulls, Eagles and Emperors; eagle bombs that burst into shrapnel, a once-per-ship shielded warp and a PERFECT bonus for 50 birds out of 50. Players take turns. |
+| `moon_cresta.asm` | **Moon Cresta** | 1–2 | Nichibutsu 1980: a three-stage rocket where every stage is a life, timed docking with retro rockets for a bonus and more firepower, and waves of Cold Eyes that split in two, Super Flies, Four-Ds, meteors and Atomic Piles, with a start tune. Players take turns. |
 
 Each source file starts with a header describing controls, rules and technical notes.
 
@@ -162,6 +163,12 @@ Captured with the miniVIC emulator in [`tools`](tools): title screen and gamepla
   <img src="screenshots/space_firebird_game.png" width="45%" />
 </p>
 
+### Moon Cresta
+<p align="center">
+  <img src="screenshots/moon_cresta_title.png" width="45%" />
+  <img src="screenshots/moon_cresta_game.png" width="45%" />
+</p>
+
 ---
 
 ## 🔗 Useful Links & Resources
@@ -179,7 +186,7 @@ Captured with the miniVIC emulator in [`tools`](tools): title screen and gamepla
 
 The games in this repository are **fan-made tributes** to classic arcade games. They were written from scratch in 65C02 assembly for the miniVIC as a **non-commercial, educational and demonstration project**, to show what this home-built hardware can do.
 
-* All titles, characters, artwork, sounds and trademarks of the original games (such as *Asteroids*, *Breakout*, *Centipede*, *Defender*, *Lunar Lander*, *Missile Command*, *Radar Scope*, *Space Firebird*, *Space Invaders* and *Warlords*) belong to their **respective owners**. Their names are used only to identify the games that inspired these versions.
+* All titles, characters, artwork, sounds and trademarks of the original games (such as *Asteroids*, *Breakout*, *Centipede*, *Defender*, *Lunar Lander*, *Missile Command*, *Moon Cresta*, *Radar Scope*, *Space Firebird*, *Space Invaders* and *Warlords*) belong to their **respective owners**. Their names are used only to identify the games that inspired these versions.
 * This project is **not affiliated with, endorsed or sponsored by** any of the rights holders, and claims no rights over the original games.
 * No original program code or ROM data has been used: graphics and sounds are new re-creations made to resemble the originals.
 * No commercial use is intended. If you are a rights holder and have any concern, please [open an issue](https://github.com/Boogs77/miniVIC_games/issues) and the material will be reviewed or removed promptly.
