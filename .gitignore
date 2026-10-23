@@ -19,3 +19,6 @@ CLAUDE.md
 
 # development tools (local only)
 dev/
+
+# WAV files rendered by tools/aywav.js
+sounds/

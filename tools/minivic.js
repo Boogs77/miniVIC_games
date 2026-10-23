@@ -4,7 +4,7 @@
 //   CPU  W65C02S at 1 MHz (65C02 instructions, approximate cycles)
 //   VDP  TMS9918A: Graphics I/II + sprites, NMI at the vblank (60 Hz)
 //   VIA  joysticks: PORTB $D580 (P2), PORTA $D581 (P1), active low
-//   AY   writes to $D380-$D385 are ignored (no audio)
+//   AY   writes to $D380-$D385 are ignored (no audio; tools/aywav.js records them)
 //
 // The NMI handler of the BIOS is replaced by a stub at $FF00:
 //   PHA PHX PHY / JSR $0FD0 / LDA $B001 / PLY PLX PLA / RTI

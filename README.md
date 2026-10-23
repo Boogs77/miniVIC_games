@@ -72,9 +72,10 @@ To rebuild them:
 The script assembles every file into `bin/`, optionally copies the sources and binaries to the local folder written in `copy.path`, runs each game in the emulator to update its screenshots, then commits and pushes the updated binaries and screenshots. Use `build.ps1 -NoPublish` to build without publishing.
 
 ### 🖥️ Emulator & Screenshots
-The [`tools`](tools) folder contains a small **miniVIC emulator** written in Node.js (no dependencies): W65C02S CPU, TMS9918A video with sprites, VDP interrupt on NMI and the two joysticks (no audio).
+The [`tools`](tools) folder contains a small **miniVIC emulator** written in Node.js (no dependencies): W65C02S CPU, TMS9918A video with sprites, VDP interrupt on NMI and the two joysticks. It has no audio, but it can record what the games write to the two AY chips.
 * `node tools/screenshots.js` runs every game and saves its screenshots in [`screenshots`](screenshots).
 * `tools/screenshots.json` defines, for each game, the input sequence (wait, button presses, random play) and when to take each picture.
+* `node tools/aywav.js tank` runs a game, records its AY writes and renders them to a stereo WAV in `sounds/` (left AY = left channel), to listen to the music and sound effects without the hardware.
 
 ---
 
