@@ -23,6 +23,8 @@ A collection of arcade games written in **65C02 assembly** for the **Boogs77-min
 
 Each source file starts with a header describing controls, rules and technical notes.
 
+> ℹ️ These games are non-commercial fan-made tributes to the original arcade games: see the **Disclaimer** at the end of this page.
+
 ---
 
 ## 🧠 Hardware Requirements
@@ -148,6 +150,17 @@ Captured with the miniVIC emulator in [`tools`](tools): title screen and gamepla
 * **Video Module:** [BO6502 VDU Reference](https://github.com/Boogs77/BO6502_65C02-based_modular_computer/tree/main/BO6502%20VDU)
 * **Audio Module:** [BO6502 AUDIO Reference](https://github.com/Boogs77/BO6502_65C02-based_modular_computer/tree/main/BO6502%20AUDIO)
 * **Joystick Module:** [BO6502 JOYSTICK Reference](https://github.com/Boogs77/BO6502_65C02-based_modular_computer/tree/main/BO6502%20JOYSTICK)
+
+---
+
+## ⚖️ Disclaimer
+
+The games in this repository are **fan-made tributes** to classic arcade games. They were written from scratch in 65C02 assembly for the miniVIC as a **non-commercial, educational and demonstration project**, to show what this home-built hardware can do.
+
+* All titles, characters, artwork, sounds and trademarks of the original games (such as *Asteroids*, *Breakout*, *Centipede*, *Lunar Lander*, *Missile Command*, *Space Invaders* and *Warlords*) belong to their **respective owners**. Their names are used only to identify the games that inspired these versions.
+* This project is **not affiliated with, endorsed or sponsored by** any of the rights holders, and claims no rights over the original games.
+* No original program code or ROM data has been used: graphics and sounds are new re-creations made to resemble the originals.
+* No commercial use is intended. If you are a rights holder and have any concern, please [open an issue](https://github.com/Boogs77/miniVIC_games/issues) and the material will be reviewed or removed promptly.
 
 ---
 *Created by Boogs77 - 2026*
