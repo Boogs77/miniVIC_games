@@ -2,7 +2,7 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Build: file aperto",
+            "label": "Build: open file",
             "type": "process",
             "command": "powershell",
             "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/build.ps1", "${file}"],
@@ -10,7 +10,7 @@
             "problemMatcher": []
         },
         {
-            "label": "Build: tutti i giochi",
+            "label": "Build: all games",
             "type": "process",
             "command": "powershell",
             "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/build.ps1"],
