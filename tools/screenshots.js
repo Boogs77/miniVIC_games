@@ -27,7 +27,7 @@ const BITS = { up: 1, down: 2, left: 4, right: 8, fire: 16, fire2: 32 };
 
 function bits(spec) {
   return spec.split('+').reduce((v, k) => {
-    if (!(k in BITS)) throw new Error(`comando sconosciuto: ${k}`);
+    if (!(k in BITS)) throw new Error(`unknown input: ${k}`);
     return v | BITS[k];
   }, 0);
 }
@@ -86,7 +86,7 @@ function runGame(name, steps, outDir) {
       fs.writeFileSync(file, m.vdp.png(2));
       saved.push(path.relative(ROOT, file));
     }
-    else throw new Error(`passo sconosciuto: ${cmd}`);
+    else throw new Error(`unknown step: ${cmd}`);
   }
   return saved;
 }
@@ -102,7 +102,7 @@ for (const g of games) {
     const files = runGame(g, config[g] || config._default, outDir);
     console.log(`${g}: ${files.join(', ')} (${((Date.now() - t) / 1000).toFixed(1)} s)`);
   } catch (e) {
-    console.error(`${g}: ERRORE ${e.message}`);
+    console.error(`${g}: ERROR ${e.message}`);
     failed++;
   }
 }

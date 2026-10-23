@@ -19,7 +19,7 @@ Set-Location $PSScriptRoot
 $vasm = $env:VASM
 if (-not $vasm -and (Test-Path vasm.path)) { $vasm = (Get-Content vasm.path -TotalCount 1).Trim() }
 if (-not $vasm -or -not (Test-Path $vasm)) {
-  Write-Host "vasm6502_oldstyle non trovato: scrivi il suo percorso nel file vasm.path" -ForegroundColor Red
+  Write-Host "vasm6502_oldstyle not found: write its path in the file vasm.path" -ForegroundColor Red
   exit 1
 }
 
@@ -37,7 +37,7 @@ foreach ($f in $Files) {
   if ($LASTEXITCODE -ne 0) { $failed += $f } else { $built += $f, $out }
 }
 if ($failed) {
-  Write-Host "ERRORI in: $($failed -join ', ') - niente pubblicato" -ForegroundColor Red
+  Write-Host "ERRORS in: $($failed -join ', ') - nothing published" -ForegroundColor Red
   exit 1
 }
 
@@ -46,9 +46,9 @@ if (Test-Path copy.path) {
   $dest = (Get-Content copy.path -TotalCount 1).Trim()
   if (Test-Path $dest) {
     Copy-Item -Path $built -Destination $dest -Force
-    Write-Host "Copiati in $dest" -ForegroundColor Green
+    Write-Host "Copied to $dest" -ForegroundColor Green
   } else {
-    Write-Host "Cartella di copia non trovata: $dest" -ForegroundColor Red
+    Write-Host "Copy folder not found: $dest" -ForegroundColor Red
   }
 }
 
@@ -59,10 +59,10 @@ if (Get-Command node -ErrorAction SilentlyContinue) {
   if ($LASTEXITCODE -eq 0) {
     $built += $games | ForEach-Object { Get-ChildItem "screenshots\$($_)_*.png" } | ForEach-Object { "screenshots\$($_.Name)" }
   } else {
-    Write-Host "Screenshot non riusciti (la build prosegue)" -ForegroundColor Yellow
+    Write-Host "Screenshots failed (the build goes on)" -ForegroundColor Yellow
   }
 } else {
-  Write-Host "Node.js non trovato: niente screenshot" -ForegroundColor Yellow
+  Write-Host "Node.js not found: no screenshots" -ForegroundColor Yellow
 }
 if ($NoPublish) { exit 0 }
 
@@ -70,11 +70,11 @@ if ($NoPublish) { exit 0 }
 git add -- $built
 git diff --cached --quiet
 if ($LASTEXITCODE -eq 0) {
-  Write-Host "Nessuna modifica da pubblicare" -ForegroundColor Yellow
+  Write-Host "Nothing to publish" -ForegroundColor Yellow
   exit 0
 }
 $names = ($Files | ForEach-Object { [IO.Path]::GetFileName($_) }) -join ', '
 git commit -m "Build: $names"
 git push
-if ($LASTEXITCODE -ne 0) { Write-Host "Push non riuscito" -ForegroundColor Red; exit 1 }
-Write-Host "Pubblicato su GitHub" -ForegroundColor Green
+if ($LASTEXITCODE -ne 0) { Write-Host "Push failed" -ForegroundColor Red; exit 1 }
+Write-Host "Published on GitHub" -ForegroundColor Green

@@ -384,7 +384,7 @@ class MiniVIC {
     while (cpu.cycles < end) {
       cpu.step();
       this.checkNmi();
-      if (cpu.bad) throw new Error(`opcode sconosciuto $${cpu.bad.opc.toString(16)} a $${cpu.bad.pc.toString(16)}`);
+      if (cpu.bad) throw new Error(`unknown opcode $${cpu.bad.opc.toString(16)} at $${cpu.bad.pc.toString(16)}`);
     }
     this.vdp.render();                                         // start of the vblank
     this.vdp.status |= 0x80;
