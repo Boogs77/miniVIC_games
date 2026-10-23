@@ -16,3 +16,6 @@ gameslist.md
 # local working documents
 GUIDA_SVILUPPO.md
 CLAUDE.md
+
+# development tools (local only)
+dev/
