@@ -2,74 +2,77 @@
 ;                                                              ;
 ;   ARCADE_004  -  CENTIPEDE                                   ;
 ;   65C02 assembly, TMS9918A Graphics II                       ;
-;   Base: 1vs1 (NMI/vblank + SAT buffer + coda tile, VDP)      ;
+;   Base: 1vs1 (NMI/vblank + SAT buffer + tile queue, VDP)     ;
 ;                                                              ;
-;   - joystick su PORTA $D581 o PORTB $D580 (i due si sommano) ;
-;   - joystick = muove il cannone nella zona in basso          ;
-;   - un tasto qualsiasi (bit4 o bit5) = fuoco (un colpo alla  ;
-;     volta, tenendo premuto riparte da solo)                  ;
-;   - il centipede (12 segmenti) scende a zig-zag tra i funghi;;
-;     un fungo regge 4 colpi; un segmento colpito diventa un   ;
-;     fungo e quello dietro diventa una nuova testa            ;
-;   - pulce (dal livello 2): cade lasciando funghi, 2 colpi    ;
-;   - ragno: rimbalza nella zona del giocatore e mangia funghi ;
-;   - punti: fungo 1, corpo 10, testa 100, pulce 200,          ;
-;     ragno 300/600/900 (piu' e' vicino, piu' vale)            ;
-;   - vita extra ogni 12000 punti; 3 vite; livelli infiniti    ;
-;   - AUDIO su 2 x AY-3-8910: musica d'ingresso (il tasto si legge solo a
-;     brano finito), 4 sibili diversi per lo sparo, esplosioni, suoni
-;     diversi per fungo, corpo, testa, pulce e ragno, esplosione del
-;     cannone, jingle di livello / vita extra e musica di sconfitta.
-;     Il motore audio gira nell'NMI (60 Hz).
-;   - il centipede e i funghi sono TILE (name table): le       ;
-;     modifiche passano da una coda scritta dall'NMI nel vblank;
-;     gli sprite (cannone, colpo, pulce, ragno, esplosione)    ;
-;     passano dalla SAT come nel gioco di riferimento          ;
+;   - joystick on PORTA $D581 or PORTB $D580 (added up)        ;
+;   - joystick = moves the cannon in the bottom zone           ;
+;   - any button (bit4 or bit5) = fire (one shot at a          ;
+;     time, holding the button fires again by itself)          ;
+;   - the centipede (12 segments) zig-zags down among the      ;
+;     mushrooms; a mushroom takes 4 shots; a segment hit       ;
+;     becomes a mushroom and the one behind a new head         ;
+;   - flea (from level 2): falls leaving mushrooms, 2 shots    ;
+;   - spider: bounces in the player zone, eats mushrooms       ;
+;   - points: mushroom 1, body 10, head 100, flea 200,         ;
+;     spider 300/600/900 (the closer, the more it is worth)    ;
+;   - extra life every 12000 points; 3 lives; endless levels   ;
+;   - AUDIO on 2 x AY-3-8910: intro music (the button is       ;
+;     read only when the tune is over), 4 different hisses     ;
+;     for the shot, explosions, sounds for mushroom, body,     ;
+;     head, flea and spider, explosion of the cannon,          ;
+;     level / extra life jingle and game over music.           ;
+;     The sound engine runs in the NMI (60 Hz).                ;
+;   - the centipede and the mushrooms are TILES (name          ;
+;     table): the changes go through a queue written by        ;
+;     the NMI in the vblank; the sprites (cannon, shot,        ;
+;     flea, spider, explosion) go through the SAT as in        ;
+;     the reference game                                       ;
+;                                                              ;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-; ---------------- zero page (copia dei blocchi VDP) ----------------
+; ---------------- zero page (copy of the VDP blocks) ----------------
 VDP_INIT                 = $30
 VDP_INIT_HI              = $31
 
-; ---------------- zero page: stato di gioco ----------------
-JOY                      = $60     ; joystick 1 + 2, 1 = premuto
+; ---------------- zero page: game state ----------------
+JOY                      = $60     ; joystick 1 + 2, 1 = pressed
 PX                       = $61     ; cannone: X sprite (0-248)
-PY                       = $62     ; cannone: Y del bordo alto (144-184)
-BX                       = $63     ; colpo: X sprite
-BY                       = $64     ; colpo: Y del bordo alto
-BACT                     = $65     ; 1 = colpo in volo
-LIVES                    = $66     ; vite (compresa quella in gioco)
+PY                       = $62     ; cannon: Y of the top edge (144-184)
+BX                       = $63     ; shot: sprite X
+BY                       = $64     ; shot: Y of the top edge
+BACT                     = $65     ; 1 = shot in flight
+LIVES                    = $66     ; lives (including the one in play)
 LEVEL                    = $67
-SC0                      = $68     ; punteggio BCD: SC2 SC1 SC0 (6 cifre)
+SC0                      = $68     ; BCD score: SC2 SC1 SC0 (6 digits)
 SC1                      = $69
 SC2                      = $6A
-HI0                      = $6B     ; record BCD
+HI0                      = $6B     ; BCD hi score
 HI1                      = $6C
 HI2                      = $6D
-NB1                      = $6E     ; prossima soglia di vita extra (BCD, SC2:SC1)
+NB1                      = $6E     ; next extra life threshold (BCD, SC2:SC1)
 NB2                      = $6F
-ALIVE                    = $70     ; segmenti vivi
-STEPCNT                  = $71     ; frame al prossimo passo del centipede
-STEPLEN                  = $72     ; frame per passo
-ANIM                     = $73     ; fase delle zampe
-DYING                    = $74     ; frame rimasti di esplosione del cannone
-LVLTMR                   = $75     ; pausa prima del livello successivo
+ALIVE                    = $70     ; segments alive
+STEPCNT                  = $71     ; frames to the next step of the centipede
+STEPLEN                  = $72     ; frames per step
+ANIM                     = $73     ; phase of the legs
+DYING                    = $74     ; frames left of the cannon explosion
+LVLTMR                   = $75     ; pause before the next level
 HUDDIRTY                 = $76
 RND                      = $77
-QN                       = $78     ; voci in costruzione nella coda tile
-QGO                      = $79     ; voci pubblicate (le consuma l'NMI)
-FACT                     = $7A     ; pulce attiva
+QN                       = $78     ; entries being built in the tile queue
+QGO                      = $79     ; entries published (the NMI uses them)
+FACT                     = $7A     ; flea active
 FX                       = $7B
 FY                       = $7C
-FHP                      = $7D     ; colpi che le mancano
+FHP                      = $7D     ; shots it still needs
 FSPD                     = $7E
-FTMR                     = $7F     ; attesa pulce (unita' di 16 frame)
-SACT                     = $80     ; ragno attivo
+FTMR                     = $7F     ; flea wait (units of 16 frames)
+SACT                     = $80     ; spider active
 SX                       = $81
 SY                       = $82
-SDX                      = $83     ; 0 = va a destra, 1 = a sinistra
-SVY                      = $84     ; 0 = sale, 1 = scende
-STMR                     = $85     ; attesa ragno (unita' di 16 frame)
+SDX                      = $83     ; 0 = going right, 1 = left
+SVY                      = $84     ; 0 = going up, 1 = going down
+STMR                     = $85     ; spider wait (units of 16 frames)
 GO_DELAY                 = $86
 ARMED                    = $87
 T0                       = $90
@@ -80,28 +83,28 @@ T4                       = $94
 T5                       = $95
 T6                       = $96
 T7                       = $97
-PTR                      = $98     ; 2 byte
-MPTR                     = $9A     ; 2 byte: indirizzo nel MAP
+PTR                      = $98     ; 2 bytes
+MPTR                     = $9A     ; 2 bytes: address in the MAP
 T8                       = $9C
 T9                       = $9D
 
-; ---------------- zero page: audio (usate dal motore nell'NMI) ----------------
-SFX_REQ                  = $A0     ; effetto richiesto (id+1, 0 = nessuno)
-SFX_RPRI                 = $A1     ; priorita' della richiesta
-SFX_CNT                  = $A2     ; frame rimasti dell'effetto in corso
+; ---------------- zero page: audio (used by the engine in the NMI) ----------------
+SFX_REQ                  = $A0     ; requested effect (id+1, 0 = none)
+SFX_RPRI                 = $A1     ; priority of the request
+SFX_CNT                  = $A2     ; frames left of the effect playing
 SFX_PRI                  = $A3
-SFX_MODE                 = $A4     ; bit0 = tono, bit1 = rumore
-SFX_PL                   = $A5     ; periodo del tono (16 bit)
+SFX_MODE                 = $A4     ; bit0 = tone, bit1 = noise
+SFX_PL                   = $A5     ; period of the tone (16 bit)
 SFX_PH                   = $A6
-SFX_DEL                  = $A7     ; variazione del periodo per frame (con segno)
+SFX_DEL                  = $A7     ; change of the period per frame (signed)
 SFX_VOL                  = $A8
-SFX_DEC                  = $A9     ; ogni quanti frame cala il volume
+SFX_DEC                  = $A9     ; every how many frames the volume drops
 SFX_DCNT                 = $AA
-SFX_NP                   = $AB     ; periodo del rumore
-SFX_FLIP                 = $AC     ; ogni quanti frame inverte il delta (vibrato)
+SFX_NP                   = $AB     ; period of the noise
+SFX_FLIP                 = $AC     ; every how many frames the delta flips (vibrato)
 SFX_FCNT                 = $AD
-MUS_ON                   = $AE     ; <> 0 finche' un brano sta suonando
-; due voci musicali, 8 byte ciascuna: PTR(2) CNT TPL TPH VOL NOTE ACT
+MUS_ON                   = $AE     ; <> 0 while a tune is playing
+; two music voices, 8 bytes each: PTR(2) CNT TPL TPH VOL NOTE ACT
 MEL_PTR                  = $B0
 MEL_CNT                  = $B2
 MEL_TPL                  = $B3
@@ -121,7 +124,7 @@ NT1                      = $C1
 NT2                      = $C2
 NT3                      = $C3
 
-; AY-3-8910 (stereo, come SUPER_MARIO_STEREO.s): LATCH = registro, WRITE = dato
+; AY-3-8910 (stereo, as in SUPER_MARIO_STEREO.s): LATCH = register, WRITE = data
 AY_L_LATCH = $D384
 AY_L_WRITE = $D385
 AY_R_LATCH = $D380
@@ -132,60 +135,60 @@ PORTA_JOY = $d581        ;         |P2|P1|RG|LF|DW|UP (LSB)   joystick 1
 DDRB_JOY  = $d582        ;
 DDRA_JOY  = $d583        ;
 
-; ---------------- RAM di lavoro (sopra il programma) ----------------
-MAPBASE   = $5000        ; 32x24 byte: 0 = vuoto, 1-4 = fungo (4 = intero); riga 0 = HUD
-SCOL      = $5300        ; segmenti del centipede (16 posti, se ne usano 12)
+; ---------------- work RAM (above the program) ----------------
+MAPBASE   = $5000        ; 32x24 bytes: 0 = empty, 1-4 = mushroom (4 = whole); row 0 = HUD
+SCOL      = $5300        ; segments of the centipede (16 slots, 12 are used)
 SROW      = $5310
-SDIR      = $5320        ; 0 = va a destra, 1 = a sinistra
-SHEAD     = $5330        ; 1 = testa
+SDIR      = $5320        ; 0 = going right, 1 = left
+SHEAD     = $5330        ; 1 = head
 SALIVE    = $5340
-SUP       = $5350        ; 1 = sta risalendo nella zona del giocatore
-QLO       = $5400        ; coda tile: indirizzo VRAM basso, alto (con bit di scrittura), tile
+SUP       = $5350        ; 1 = climbing back up in the player zone
+QLO       = $5400        ; tile queue: VRAM address low, high (with write bit), tile
 QHI       = $5440
 QTL       = $5480
-LBUF      = $5500        ; registri AY da scrivere nel frame: chip sinistro (9) ...
-RBUF      = $5510        ; ... e destro (9)
+LBUF      = $5500        ; AY registers to write in the frame: left chip (9) ...
+RBUF      = $5510        ; ... and right (9)
 
-; ---------------- parametri di gioco ----------------
-NSEG          = 12       ; segmenti totali (catena + teste singole)
-PSPEED        = 2        ; pixel per frame del cannone
-BSPEED        = 4        ; pixel per frame del colpo
-PY_MIN        = 144      ; zona del giocatore: righe 18-23
+; ---------------- game parameters ----------------
+NSEG          = 12       ; total segments (chain + single heads)
+PSPEED        = 2        ; pixels per frame of the cannon
+BSPEED        = 4        ; pixels per frame of the shot
+PY_MIN        = 144      ; player zone: rows 18-23
 PY_MAX        = 184
-PZ_TOP        = 18       ; prima riga della zona del giocatore
-QMAX          = 64       ; voci massime nella coda
-MUSH_COUNT    = 42       ; funghi iniziali
+PZ_TOP        = 18       ; first row of the player zone
+QMAX          = 64       ; largest number of entries in the queue
+MUSH_COUNT    = 42       ; starting mushrooms
 START_LIVES   = 3
 DEATH_FRAMES  = 90
-HIDE_Y        = $C0      ; Y fuori schermo (NON $D0: fermerebbe la lista sprite)
+HIDE_Y        = $C0      ; off-screen Y (NOT $D0: it would stop the sprite list)
 BTN_MASK      = %00110000
 BLOCK_COUNT   = 7        ; blocchi in VDP_BLOCKS
 
 ; tile
-T_BODY        = $05      ; $05/$06 = corpo (due fasi di zampe)
+T_BODY        = $05      ; $05/$06 = body (two phases of the legs)
 T_HEAD_R      = $07
 T_HEAD_L      = $08
 T_LIFE        = $0E
 
-; effetti sonori (indice in SFX_TAB)
-SFX_SHOT0     = 0        ; 0-3: quattro sibili diversi per lo sparo
-SFX_HIT       = 4        ; fungo colpito
-SFX_POP       = 5        ; fungo distrutto
-SFX_BODY      = 6        ; segmento di corpo
-SFX_HEAD      = 7        ; testa
-SFX_FLEA      = 8        ; pulce uccisa
-SFX_SPIDER    = 9        ; ragno ucciso
-SFX_BOOM      = 10       ; esplosione del cannone
-SFX_FLEAHIT   = 11       ; pulce colpita (non ancora morta)
+; sound effects (index in SFX_TAB)
+SFX_SHOT0     = 0        ; 0-3: four different hisses for the shot
+SFX_HIT       = 4        ; mushroom hit
+SFX_POP       = 5        ; mushroom destroyed
+SFX_BODY      = 6        ; body segment
+SFX_HEAD      = 7        ; head
+SFX_FLEA      = 8        ; flea killed
+SFX_SPIDER    = 9        ; spider killed
+SFX_BOOM      = 10       ; explosion of the cannon
+SFX_FLEAHIT   = 11       ; flea hit (not dead yet)
 
-; brani (indice in SONG_TAB)
+; tunes (index in SONG_TAB)
 SONG_TITLE    = 0
 SONG_OVER     = 1
 SONG_LEVEL    = 2
 SONG_LIFE     = 3
 
 
- .org $0FD0               ; trampolino chiamato da NMI_HANDLER (bios) con JSR $0FD0
+ .org $0FD0               ; trampoline called by NMI_HANDLER (bios) with JSR $0FD0
 DISPATCH:
   JMP NMI_TASK
 
@@ -206,9 +209,9 @@ VDP_REGISTER_BITS      = %10000000  ; pattern of second register write: 10000RRR
 RESET:
   JSR VDP_SET_REGISTERS        ; Setting VDP register
   JSR CLEAR_VRAM
-  JSR VDP_LOAD_ALL             ; pattern, colori e sprite nella VRAM
+  JSR VDP_LOAD_ALL             ; patterns, colours and sprites into the VRAM
 
-  ; joystick: PORTA e PORTB in input
+  ; joystick: PORTA and PORTB as inputs
   LDA #$00
   STA DDRA_JOY
   STA DDRB_JOY
@@ -223,7 +226,7 @@ RESET:
   JSR HIDE_SPRITES
   JSR SND_INIT
 
-  ; abilita l'interrupt del VDP (R1: 16K + display ON + INT ON = $E6)
+  ; enable the VDP interrupt (R1: 16K + display ON + INT ON = $E6)
   LDA #$E6
   STA VREG
   LDA #(VDP_REGISTER_BITS | 1)
@@ -232,17 +235,17 @@ RESET:
 
 
 ; ===============================================================
-;  SCHERMATA START
+;  START SCREEN
 ; ===============================================================
 TITLE:
   LDX #$FF
-  TXS                          ; da qui non si torna indietro: stack pulito
+  TXS                          ; no way back from here: clean stack
   LDA #$00
   STA QN
   STA QGO
   JSR SND_STOP
   JSR HIDE_SPRITES
-  JSR VDP_INT_OFF              ; da ora il main loop puo' scrivere sul VDP
+  JSR VDP_INT_OFF              ; from now on the main loop can write the VDP
   JSR CLEAR_NAME_TABLE
   LDA #<TITLE_REC
   STA PTR
@@ -250,7 +253,7 @@ TITLE:
   STA PTR+1
   JSR DRAW_RECORDS
   JSR VDP_INT_ON
-  LDX #SONG_TITLE              ; musica d'ingresso: il tasto si legge solo alla fine
+  LDX #SONG_TITLE              ; intro music: the button is read only at the end
   JSR PLAY_SONG
 .ti_w:
   JSR WAIT_FRAME
@@ -264,14 +267,14 @@ TITLE:
   JSR DRAW_RECORDS
   JSR VDP_INT_ON
   JSR WAIT_FIRE
-  LDA FRAME_CNT                ; il momento in cui premi il tasto semina il caso
+  LDA FRAME_CNT                ; the moment you press the button seeds the random generator
   ORA #$01
   STA RND
   JMP NEW_GAME
 
 
 ; ===============================================================
-;  NUOVA PARTITA
+;  NEW GAME
 ; ===============================================================
 NEW_GAME:
   JSR SND_STOP
@@ -283,7 +286,7 @@ NEW_GAME:
   STA LVLTMR
   STA QN
   STA QGO
-  LDA #$20                     ; prima vita extra a 12000
+  LDA #$20                     ; first extra life at 12000
   STA NB1
   LDA #$01
   STA NB2
@@ -299,7 +302,7 @@ NEW_GAME:
   JSR VDP_INT_ON
   JSR INIT_PLAYER
   JSR INIT_LEVEL
-  JSR HUD_PUSH                 ; punteggi, vite, livello (via coda)
+  JSR HUD_PUSH                 ; scores, lives, level (through the queue)
 
 GAME_LOOP:
   JSR READ_JOY
@@ -324,19 +327,19 @@ GAME_LOOP:
   STA HUDDIRTY
   JSR HUD_PUSH
 .gl_pub:
-  LDA QN                       ; pubblica la coda: la consuma l'NMI nel vblank
+  LDA QN                       ; publishes the queue: the NMI uses it in the vblank
   STA QGO
   LDA #$00
   STA QN
-  JSR WAIT_FRAME               ; sincronizza il loop al vblank (NMI)
+  JSR WAIT_FRAME               ; syncs the loop to the vblank (NMI)
 .gl_qw:
-  LDA QGO                      ; aspetta che la coda sia stata scritta
+  LDA QGO                      ; waits until the queue has been written
   BNE .gl_qw
   JMP GAME_LOOP
 
 
 ; ---------------------------------------------------------------
-; legge i due joystick (1 = premuto) e li somma
+; reads both joysticks (1 = pressed) and adds them
 ; ---------------------------------------------------------------
 READ_JOY:
   LDA PORTA_JOY
@@ -360,7 +363,7 @@ NEXT_RND:                      ; LFSR a 8 bit
   STA RND
   RTS
 
-RND8:                          ; 8 passi: A = byte "fresco" (X preservato)
+RND8:                          ; 8 steps: A = "fresh" byte (X preserved)
   PHX
   LDX #8
 .r8:
@@ -373,8 +376,8 @@ RND8:                          ; 8 passi: A = byte "fresco" (X preservato)
 
 
 ; ---------------------------------------------------------------
-; coda dei tile: A = tile, T0/T1 = indirizzo VRAM (lo, hi con bit $40)
-; (Y viene modificato)
+; tile queue: A = tile, T0/T1 = VRAM address (lo, hi with bit $40)
+; (Y is changed)
 ; ---------------------------------------------------------------
 QPUT:
   LDY QN
@@ -389,14 +392,14 @@ QPUT:
 .qp_full:
   RTS
 
-; riga A, colonna Y  ->  MPTR = indirizzo nel MAP, T0/T1 = indirizzo VRAM (name table)
-; (X e Y preservati)
+; row A, column Y  ->  MPTR = address in the MAP, T0/T1 = VRAM address (name table)
+; (X and Y preserved)
 CALC_CELL:
   PHA
   LSR A
   LSR A
   LSR A
-  STA T2                       ; riga / 8
+  STA T2                       ; row / 8
   CLC
   ADC #>MAPBASE
   STA MPTR+1
@@ -410,7 +413,7 @@ CALC_CELL:
   ASL A
   ASL A
   ASL A
-  ASL A                        ; (riga mod 8) * 32
+  ASL A                        ; (row mod 8) * 32
   STA T0
   TYA
   ORA T0
@@ -420,8 +423,8 @@ CALC_CELL:
 
 
 ; ---------------------------------------------------------------
-; punteggio: T0 = punti BCD (decine/unita'), T1 = BCD (migliaia/centinaia)
-; gestisce vita extra e record
+; score: T0 = BCD points (tens/units), T1 = BCD (thousands/hundreds)
+; handles extra life and hi score
 ; ---------------------------------------------------------------
 ADD_SCORE:
   SED
@@ -436,7 +439,7 @@ ADD_SCORE:
   ADC #$00
   STA SC2
   CLD
-  LDA SC2                      ; vita extra?
+  LDA SC2                      ; extra life?
   CMP NB2
   BCC .as_nob
   BNE .as_bon
@@ -446,7 +449,7 @@ ADD_SCORE:
 .as_bon:
   PHX
   PHY
-  LDX #SONG_LIFE               ; jingle della vita extra
+  LDX #SONG_LIFE               ; jingle of the extra life
   JSR PLAY_SONG
   PLY
   PLX
@@ -465,7 +468,7 @@ ADD_SCORE:
   STA NB2
   CLD
 .as_nob:
-  LDA SC2                      ; nuovo record?
+  LDA SC2                      ; new hi score?
   CMP HI2
   BCC .as_hid
   BNE .as_hi
@@ -490,7 +493,7 @@ ADD_SCORE:
 
 
 ; ---------------------------------------------------------------
-; HUD via coda: punteggio (col 1-6), vite (8-13), livello (17-18), record (24-29)
+; HUD through the queue: score (col 1-6), lives (8-13), level (17-18), hi score (24-29)
 ; ---------------------------------------------------------------
 HUD_PUSH:
   LDX #1
@@ -500,14 +503,14 @@ HUD_PUSH:
   JSR PUSH_BCD
   LDA SC0
   JSR PUSH_BCD
-  LDX #8                       ; icone delle vite di riserva
+  LDX #8                       ; icons of the spare lives
   LDY #0
 .hp_l:
   STY T9
   LDA T9
   CLC
   ADC #1
-  CMP LIVES                    ; icona se (k+1) < LIVES
+  CMP LIVES                    ; icon if (k+1) < LIVES
   BCS .hp_no
   LDA #T_LIFE
   BRA .hp_p
@@ -519,7 +522,7 @@ HUD_PUSH:
   INY
   CPY #6
   BNE .hp_l
-  LDX #17                      ; livello a due cifre
+  LDX #17                      ; two-digit level
   LDA LEVEL
   LDY #0
 .hp_d:
@@ -529,7 +532,7 @@ HUD_PUSH:
   INY
   BRA .hp_d
 .hp_o:
-  STA T8                       ; unita'
+  STA T8                       ; units
   TYA
   BEQ .hp_t0
   CLC
@@ -551,7 +554,7 @@ HUD_PUSH:
   LDA HI0
   JMP PUSH_BCD
 
-; A = byte BCD, X = colonna (riga 0): scrive 2 cifre, X avanza di 2
+; A = BCD byte, X = column (row 0): writes 2 digits, X moves on by 2
 PUSH_BCD:
   STA T3
   LSR A
@@ -565,7 +568,7 @@ PUSH_BCD:
   AND #$0F
   CLC
   ADC #$30
-; A = tile, X = colonna sulla riga 0: X avanza di 1
+; A = tile, X = column on row 0: X moves on by 1
 PUSH_COL:
   STX T0
   LDY #(VDP_WRITE_VRAM_BIT | >VDP_NAME_TABLE_BASE)
@@ -583,7 +586,7 @@ CLEAR_MAP:
   STA MPTR
   LDA #>MAPBASE
   STA MPTR+1
-  LDX #3                       ; 768 byte
+  LDX #3                       ; 768 bytes
 .cm_p:
   LDY #0
   LDA #$00
@@ -596,7 +599,7 @@ CLEAR_MAP:
   BNE .cm_p
   RTS
 
-GEN_MUSH:                      ; funghi a caso nelle righe 2-17
+GEN_MUSH:                      ; random mushrooms in rows 2-17
   LDX #MUSH_COUNT
 .gm_l:
   JSR RND8
@@ -614,7 +617,7 @@ GEN_MUSH:                      ; funghi a caso nelle righe 2-17
   BNE .gm_l
   RTS
 
-; riga HUD fissa + campo (MAP righe 1-23) nella name table. VDP libero (INT off).
+; fixed HUD row + field (MAP rows 1-23) into the name table. VDP free (INT off).
 DRAW_FIELD:
   LDA #$00
   STA VREG
@@ -631,7 +634,7 @@ DRAW_FIELD:
   STA PTR
   LDA #>(MAPBASE+32)
   STA PTR+1
-  LDX #2                       ; 512 byte ...
+  LDX #2                       ; 512 bytes ...
 .df_p:
   LDY #0
 .df_b:
@@ -642,7 +645,7 @@ DRAW_FIELD:
   INC PTR+1
   DEX
   BNE .df_p
-  LDY #0                       ; ... + 224 = 736 = righe 1-23
+  LDY #0                       ; ... + 224 = 736 = rows 1-23
 .df_t:
   LDA (PTR),Y
   STA VDATA
@@ -653,7 +656,7 @@ DRAW_FIELD:
 
 
 ; ---------------------------------------------------------------
-; giocatore
+; player
 ; ---------------------------------------------------------------
 INIT_PLAYER:
   LDA #124
@@ -665,7 +668,7 @@ INIT_PLAYER:
   STA DYING
   RTS
 
-; T4 = x, T5 = y (sprite): A <> 0 (Z=0) se la scatola 6x6 tocca un fungo
+; T4 = x, T5 = y (sprite): A <> 0 (Z=0) if the 6x6 box touches a mushroom
 BOX_BLOCKED:
   LDA T4
   CLC
@@ -673,28 +676,28 @@ BOX_BLOCKED:
   LSR A
   LSR A
   LSR A
-  STA T6                       ; colonna sinistra
+  STA T6                       ; left column
   LDA T4
   CLC
   ADC #6
   LSR A
   LSR A
   LSR A
-  STA T7                       ; colonna destra
+  STA T7                       ; right column
   LDA T5
   CLC
   ADC #1
   LSR A
   LSR A
   LSR A
-  STA T8                       ; riga alta
+  STA T8                       ; top row
   LDA T5
   CLC
   ADC #6
   LSR A
   LSR A
   LSR A
-  STA T9                       ; riga bassa
+  STA T9                       ; bottom row
   LDY T6
   LDA T8
   JSR CALC_CELL
@@ -719,7 +722,7 @@ BOX_BLOCKED:
 
 UPDATE_PLAYER:
   LDA JOY
-  AND #%00001000               ; destra
+  AND #%00001000               ; right
   BEQ .up_nr
   LDA PX
   CLC
@@ -735,7 +738,7 @@ UPDATE_PLAYER:
   STA PX
 .up_nr:
   LDA JOY
-  AND #%00000100               ; sinistra
+  AND #%00000100               ; left
   BEQ .up_nl
   LDA PX
   SEC
@@ -750,7 +753,7 @@ UPDATE_PLAYER:
   STA PX
 .up_nl:
   LDA JOY
-  AND #%00000001               ; su
+  AND #%00000001               ; up
   BEQ .up_nu
   LDA PY
   SEC
@@ -785,12 +788,12 @@ UPDATE_PLAYER:
 
 
 ; ---------------------------------------------------------------
-; colpo
+; shot
 ; ---------------------------------------------------------------
 UPDATE_BULLET:
   LDA BACT
   BNE .ub_act
-  LDA JOY                      ; fuoco: un colpo alla volta
+  LDA JOY                      ; fire: one shot at a time
   AND #BTN_MASK
   BEQ .ub_end
   LDA #$01
@@ -801,7 +804,7 @@ UPDATE_BULLET:
   SEC
   SBC #8
   STA BY
-  LDA RND                      ; uno dei 4 sibili
+  LDA RND                      ; one of the 4 hisses
   AND #$03
   JSR SFX
   RTS
@@ -812,7 +815,7 @@ UPDATE_BULLET:
   STA BY
   CMP #8
   BCS .ub_t
-  LDA #$00                     ; uscito in cima
+  LDA #$00                     ; out at the top
   STA BACT
   RTS
 .ub_t:
@@ -820,9 +823,9 @@ UPDATE_BULLET:
 .ub_end:
   RTS
 
-; il colpo e' attivo: controlla pulce, ragno, segmenti, funghi
+; the shot is active: checks flea, spider, segments, mushrooms
 BULLET_TEST:
-  LDA FACT                     ; --- pulce: x in [FX-4, FX+4], y in [FY-7, FY+15]
+  LDA FACT                     ; --- flea: x in [FX-4, FX+4], y in [FY-7, FY+15]
   BEQ .bt_nf
   LDA BX
   SEC
@@ -842,7 +845,7 @@ BULLET_TEST:
   STA BACT
   DEC FHP
   BEQ .bt_fdead
-  LDA #3                       ; primo colpo: piu' veloce
+  LDA #3                       ; first hit: faster
   STA FSPD
   LDA #SFX_FLEAHIT
   JSR SFX
@@ -851,14 +854,14 @@ BULLET_TEST:
   LDA #$00
   STA FACT
   STA T0
-  LDA #$02                     ; 200 punti
+  LDA #$02                     ; 200 points
   STA T1
   JSR ADD_SCORE
   LDA #SFX_FLEA
   JSR SFX
   JMP FLEA_RELOAD
 .bt_nf:
-  LDA SACT                     ; --- ragno: x in [SX-4, SX+12], y in [SY-7, SY+7]
+  LDA SACT                     ; --- spider: x in [SX-4, SX+12], y in [SY-7, SY+7]
   BEQ .bt_ns
   LDA BX
   SEC
@@ -877,7 +880,7 @@ BULLET_TEST:
   LDA #$00
   STA BACT
   STA SACT
-  LDA PY                       ; piu' e' vicino, piu' vale
+  LDA PY                       ; the closer, the more it is worth
   SEC
   SBC SY
   BCS .bt_sd
@@ -907,19 +910,19 @@ BULLET_TEST:
   JSR SFX
   JMP SPIDER_RELOAD
 .bt_ns:
-  LDA BX                       ; --- cella del colpo
+  LDA BX                       ; --- cell of the shot
   CLC
   ADC #4
   LSR A
   LSR A
   LSR A
-  STA T4                       ; colonna
+  STA T4                       ; column
   TAY
   LDA BY
   LSR A
   LSR A
   LSR A
-  STA T5                       ; riga
+  STA T5                       ; row
   LDX #0
 .bt_s:
   LDA SALIVE,X
@@ -935,7 +938,7 @@ BULLET_TEST:
   INX
   CPX #NSEG
   BNE .bt_s
-  LDA T5                       ; --- fungo
+  LDA T5                       ; --- mushroom
   LDY T4
   JSR CALC_CELL
   LDA (MPTR)
@@ -944,10 +947,10 @@ BULLET_TEST:
   SBC #1
   STA (MPTR)
   PHA
-  JSR QPUT                     ; ridisegna il fungo (tile = vita residua)
+  JSR QPUT                     ; redraws the mushroom (tile = life left)
   PLA
   BNE .bt_hit
-  LDA #$01                     ; fungo distrutto: 1 punto
+  LDA #$01                     ; mushroom destroyed: 1 point
   STA T0
   LDA #$00
   STA T1
@@ -964,7 +967,7 @@ BULLET_TEST:
 .bt_end:
   RTS
 
-; segmento X colpito: diventa un fungo, quello dietro diventa testa
+; segment X hit: it becomes a mushroom, the one behind becomes a head
 SEG_HIT:
   LDA #$00
   STA BACT
@@ -972,7 +975,7 @@ SEG_HIT:
   DEC ALIVE
   LDA SHEAD,X
   BNE .sh_head
-  LDA #$10                     ; corpo: 10
+  LDA #$10                     ; body: 10
   STA T0
   LDA #$00
   STA T1
@@ -980,7 +983,7 @@ SEG_HIT:
   JSR SFX
   BRA .sh_sc
 .sh_head:
-  LDA #$00                     ; testa: 100
+  LDA #$00                     ; head: 100
   STA T0
   LDA #$01
   STA T1
@@ -1016,7 +1019,7 @@ UPDATE_CENTI:
   LDA STEPLEN
   STA STEPCNT
   JSR CENTI_STEP
-  LDA BACT                     ; dopo il passo il colpo puo' toccare un segmento
+  LDA BACT                     ; after the step the shot can touch a segment
   BEQ .uc_end
   JSR BULLET_TEST
 .uc_end:
@@ -1026,7 +1029,7 @@ CENTI_STEP:
   LDA ANIM
   EOR #$01
   STA ANIM
-  LDX #0                       ; A: ridisegna le vecchie celle dal MAP
+  LDX #0                       ; A: redraws the old cells from the MAP
 .cs_e:
   LDA SALIVE,X
   BEQ .cs_en
@@ -1039,13 +1042,13 @@ CENTI_STEP:
   INX
   CPX #NSEG
   BNE .cs_e
-  LDX #(NSEG-1)                ; B: dalla coda alla testa
+  LDX #(NSEG-1)                ; B: from the tail to the head
 .cs_m:
   LDA SALIVE,X
   BEQ .cs_mn
   LDA SHEAD,X
   BNE .cs_head
-  LDA SCOL-1,X                 ; seguace: va dove stava il precedente
+  LDA SCOL-1,X                 ; follower: goes where the previous one was
   STA SCOL,X
   LDA SROW-1,X
   STA SROW,X
@@ -1059,7 +1062,7 @@ CENTI_STEP:
 .cs_mn:
   DEX
   BPL .cs_m
-  LDX #0                       ; C: disegna le nuove celle
+  LDX #0                       ; C: draws the new cells
 .cs_d:
   LDA SALIVE,X
   BEQ .cs_dn
@@ -1070,7 +1073,7 @@ CENTI_STEP:
   BNE .cs_d
   RTS
 
-; muove la testa X (X preservato)
+; moves head X (X preserved)
 HEAD_MOVE:
   LDA SDIR,X
   BNE .hm_left
@@ -1085,17 +1088,17 @@ HEAD_MOVE:
 .hm_test:
   STA T4
   CMP #32
-  BCS .hm_blk                  ; fuori dallo schermo (anche $FF)
+  BCS .hm_blk                  ; off the screen (also $FF)
   TAY
   LDA SROW,X
   JSR CALC_CELL
   LDA (MPTR)
-  BNE .hm_blk                  ; fungo
+  BNE .hm_blk                  ; mushroom
   LDA T4
   STA SCOL,X
   RTS
 .hm_blk:
-  LDA SDIR,X                   ; bloccata: inverte e cambia riga
+  LDA SDIR,X                   ; blocked: turns and changes row
   EOR #$01
   STA SDIR,X
   LDA SUP,X
@@ -1105,7 +1108,7 @@ HEAD_MOVE:
   BEQ .hm_tu
   INC SROW,X
   RTS
-.hm_tu:                        ; in fondo: comincia a risalire
+.hm_tu:                        ; at the bottom: starts climbing back
   LDA #$01
   STA SUP,X
   DEC SROW,X
@@ -1114,7 +1117,7 @@ HEAD_MOVE:
   LDA SROW,X
   CMP #(PZ_TOP+1)
   BCS .hm_gu
-  LDA #$00                     ; in cima alla zona del giocatore: torna a scendere
+  LDA #$00                     ; at the top of the player zone: goes down again
   STA SUP,X
   INC SROW,X
   RTS
@@ -1122,7 +1125,7 @@ HEAD_MOVE:
   DEC SROW,X
   RTS
 
-; accoda il tile del segmento X
+; queues the tile of segment X
 PUSH_SEG:
   LDA SROW,X
   LDY SCOL,X
@@ -1145,18 +1148,18 @@ PUSH_SEG:
   ADC #T_BODY
   JMP QPUT
 
-; nuovo centipede per LEVEL: catena di (13-L) segmenti + (L-1) teste singole
+; new centipede for LEVEL: chain of (13-L) segments + (L-1) single heads
 INIT_LEVEL:
   LDA LEVEL
   CMP #13
   BCC .il_l
   LDA #12
 .il_l:
-  STA T4                       ; livello efficace 1-12
+  STA T4                       ; effective level 1-12
   LDA #13
   SEC
   SBC T4
-  STA T5                       ; lunghezza della catena
+  STA T5                       ; length of the chain
   LDX #0
 .il_s:
   LDA #$01
@@ -1166,7 +1169,7 @@ INIT_LEVEL:
   STA SUP,X
   CPX T5
   BCS .il_ex
-  LDA #$00                     ; catena: testa a destra, corpo a sinistra
+  LDA #$00                     ; chain: head on the right, body on the left
   STA SDIR,X
   STX T6
   LDA T5
@@ -1182,7 +1185,7 @@ INIT_LEVEL:
 .il_h:
   STA SHEAD,X
   BRA .il_n
-.il_ex:                        ; teste singole: dal bordo destro, verso sinistra
+.il_ex:                        ; single heads: from the right edge, going left
   LDA #$01
   STA SDIR,X
   STA SHEAD,X
@@ -1222,7 +1225,7 @@ INIT_LEVEL:
   BNE .il_d
   RTS
 
-STEP_TAB:                      ; frame per passo, livelli 1-12
+STEP_TAB:                      ; frames per step, levels 1-12
   .byte 6,5,5,4,4,4,3,3,3,2,2,2
 
 LEVEL_CHECK:
@@ -1230,7 +1233,7 @@ LEVEL_CHECK:
   BNE .lc_wait
   LDA ALIVE
   BNE .lc_end
-  LDA #90                      ; centipede eliminato: breve pausa
+  LDA #90                      ; centipede eliminated: short pause
   STA LVLTMR
   LDX #SONG_LEVEL
   JSR PLAY_SONG
@@ -1254,7 +1257,7 @@ LEVEL_CHECK:
 
 
 ; ---------------------------------------------------------------
-; pulce
+; flea
 ; ---------------------------------------------------------------
 FLEA_RELOAD:
   JSR RND8
@@ -1267,7 +1270,7 @@ FLEA_RELOAD:
 UPDATE_FLEA:
   LDA FACT
   BNE .uf_move
-  LDA LEVEL                    ; dal livello 2
+  LDA LEVEL                    ; from level 2
   CMP #2
   BCC .uf_end
   LDA FRAME_CNT
@@ -1298,7 +1301,7 @@ UPDATE_FLEA:
   LSR A
   LSR A
   LSR A
-  STA T4                       ; riga prima del passo
+  STA T4                       ; row before the step
   LDA FY
   CLC
   ADC FSPD
@@ -1314,7 +1317,7 @@ UPDATE_FLEA:
   BCC .uf_end
   CMP #23
   BCS .uf_end
-  STA T5                       ; nuova riga: forse lascia un fungo
+  STA T5                       ; new row: it may leave a mushroom
   JSR RND8
   CMP #100
   BCS .uf_end
@@ -1337,7 +1340,7 @@ UPDATE_FLEA:
 
 
 ; ---------------------------------------------------------------
-; ragno
+; spider
 ; ---------------------------------------------------------------
 SPIDER_RELOAD:
   JSR RND8
@@ -1362,12 +1365,12 @@ UPDATE_SPIDER:
   STA T4
   AND #$01
   BNE .us_fromr
-  LDA #$00                     ; entra da sinistra
+  LDA #$00                     ; comes in from the left
   STA SX
   STA SDX
   BRA .us_y
 .us_fromr:
-  LDA #240                     ; entra da destra
+  LDA #240                     ; comes in from the right
   STA SX
   LDA #$01
   STA SDX
@@ -1403,7 +1406,7 @@ UPDATE_SPIDER:
   DEC SX
   BEQ .us_gone
 .us_v:
-  LDA FRAME_CNT                ; ogni tanto cambia verso in verticale
+  LDA FRAME_CNT                ; now and then it changes its vertical direction
   AND #$0F
   BNE .us_mv
   JSR NEXT_RND
@@ -1431,7 +1434,7 @@ UPDATE_SPIDER:
   LDA #$00
   STA SVY
 .us_eat:
-  LDA SY                       ; mangia il fungo sotto il centro
+  LDA SY                       ; eats the mushroom under its centre
   CLC
   ADC #4
   LSR A
@@ -1461,7 +1464,7 @@ UPDATE_SPIDER:
 
 
 ; ---------------------------------------------------------------
-; il cannone viene toccato
+; the cannon is touched
 ; ---------------------------------------------------------------
 CHECK_PLAYER_HIT:
   LDA PX
@@ -1470,7 +1473,7 @@ CHECK_PLAYER_HIT:
   LSR A
   LSR A
   LSR A
-  STA T4                       ; colonne toccate dal cannone
+  STA T4                       ; columns touched by the cannon
   LDA PX
   CLC
   ADC #6
@@ -1484,7 +1487,7 @@ CHECK_PLAYER_HIT:
   LSR A
   LSR A
   LSR A
-  STA T6                       ; righe toccate
+  STA T6                       ; rows touched
   LDA PY
   CLC
   ADC #6
@@ -1513,7 +1516,7 @@ CHECK_PLAYER_HIT:
   INX
   CPX #NSEG
   BNE .ph_s
-  LDA FACT                     ; pulce
+  LDA FACT                     ; flea
   BEQ .ph_nf
   LDA PX
   SEC
@@ -1530,7 +1533,7 @@ CHECK_PLAYER_HIT:
   CMP #21
   BCC .ph_hit
 .ph_nf:
-  LDA SACT                     ; ragno
+  LDA SACT                     ; spider
   BEQ .ph_end
   LDA PX
   SEC
@@ -1568,7 +1571,7 @@ DYING_STEP:
 .ds_end:
   RTS
 
-; riparte con una vita in meno: funghi riparati (+5 punti l'uno), nuovo centipede
+; starts again with one life less: mushrooms repaired (+5 points each), new centipede
 RESPAWN:
   LDA #<MAPBASE
   STA MPTR
@@ -1606,7 +1609,7 @@ RESPAWN:
 
 
 ; ===============================================================
-;  FINE PARTITA
+;  END OF THE GAME
 ; ===============================================================
 GAME_OVER:
   LDX #$FF
@@ -1622,7 +1625,7 @@ GAME_OVER:
   STA PTR+1
   JSR DRAW_RECORDS
   JSR VDP_INT_ON
-  LDX #SONG_OVER               ; musica di sconfitta: il tasto si legge solo alla fine
+  LDX #SONG_OVER               ; game over music: the button is read only at the end
   JSR PLAY_SONG
 .go_mus:
   JSR WAIT_FRAME
@@ -1630,7 +1633,7 @@ GAME_OVER:
   BNE .go_mus
   LDA #$00
   STA ARMED
-  LDA #45                      ; poi un breve intervallo prima di accettare il pulsante
+  LDA #45                      ; then a short pause before accepting the button
   STA GO_DELAY
 .go_loop:
   JSR WAIT_FRAME
@@ -1638,7 +1641,7 @@ GAME_OVER:
   LDA JOY
   AND #BTN_MASK
   BNE .go_pressed
-  LDA GO_DELAY                 ; pulsanti rilasciati: conta l'attesa, poi arma
+  LDA GO_DELAY                 ; buttons released: counts the wait, then arms
   BNE .go_dec
   LDA #$01
   STA ARMED
@@ -1653,7 +1656,7 @@ GAME_OVER:
 
 
 ; ---------------------------------------------------------------
-; aspetta che i pulsanti siano rilasciati e poi premuti
+; waits until the buttons are released and then pressed
 ; ---------------------------------------------------------------
 WAIT_FIRE:
 .wf_rel:
@@ -1672,14 +1675,14 @@ WAIT_FIRE:
 
 
 ; ---------------------------------------------------------------
-; NMI (vblank): scrive la Sprite Attribute Table e la coda dei tile.
-; Il main loop scrive solo in RAM (SAT_BUFFER e coda Q*). Quando deve
-; scrivere direttamente sul VDP (schermate) spegne l'interrupt con
-; VDP_INT_OFF. Usa solo A e X.
+; NMI (vblank): writes the Sprite Attribute Table and the tile queue.
+; The main loop writes only into RAM (SAT_BUFFER and queue Q*). When it must
+; write the VDP directly (screens) it switches the interrupt off with
+; VDP_INT_OFF. Uses only A and X.
 ; ---------------------------------------------------------------
 NMI_TASK:
-  INC FRAME_CNT           ; conta i frame per WAIT_FRAME
-  LDA VREG                ; leggi stato VDP (azzera F e C e il latch dei byte)
+  INC FRAME_CNT           ; counts the frames for WAIT_FRAME
+  LDA VREG                ; read the VDP status (clears F and C and the byte latch)
   LDA #<VDP_SPRITE_ATT_BASE
   STA VREG
   LDA #(VDP_WRITE_VRAM_BIT | >VDP_SPRITE_ATT_BASE)
@@ -1689,7 +1692,7 @@ NMI_TASK:
   LDA SAT_BUFFER,X
   STA VDATA
   INX
-  CPX #25               ; 6 sprite x 4 byte + Y=$D0 della 7a voce
+  CPX #25               ; 6 sprites x 4 bytes + Y=$D0 of the 7th entry
   BNE .copy_sat
   LDA QGO               ; tile in coda: name table
   BEQ .nt_end
@@ -1708,21 +1711,21 @@ NMI_TASK:
   STA QGO
 .nt_end:
   PHY
-  JSR SND_TICK            ; audio: effetti, musica e registri dei due AY
+  JSR SND_TICK            ; audio: effects, music and registers of the two AYs
   PLY
-  RTS                     ; NMI_HANDLER del BIOS rilegge VREG e fa RTI
+  RTS                     ; the BIOS NMI_HANDLER rereads VREG and does RTI
 
 FRAME_CNT:     .byte $00
 LAST_FRAME:    .byte $00
 
-WAIT_FRAME:               ; aspetta il prossimo NMI (1 frame = 1/60 s)
+WAIT_FRAME:               ; waits for the next NMI (1 frame = 1/60 s)
   LDA FRAME_CNT
   CMP LAST_FRAME
   BEQ WAIT_FRAME
   STA LAST_FRAME
   RTS
 
-; spegne l'interrupt del VDP subito dopo un NMI (ne arriva un altro fra ~16 ms)
+; switches the VDP interrupt off just after an NMI (the next one comes in ~16 ms)
 VDP_INT_OFF:
   LDA FRAME_CNT
 .io_wait:
@@ -1735,7 +1738,7 @@ VDP_INT_OFF:
   RTS
 
 VDP_INT_ON:
-  LDA FRAME_CNT           ; riallinea WAIT_FRAME
+  LDA FRAME_CNT           ; realigns WAIT_FRAME
   STA LAST_FRAME
   LDA #$E6                ; R1: 16K + display ON + INT ON
   STA VREG
@@ -1743,14 +1746,14 @@ VDP_INT_ON:
   STA VREG
   RTS
 
-; SAT: 0 colpo, 1 cannone, 2 pulce, 3 ragno, 4 esplosione, 5 libero
-SAT_BUFFER:    .byte HIDE_Y,$00,0,$0F    ; 0: colpo (bianco)
-               .byte HIDE_Y,$00,4,$0B    ; 1: cannone (giallo)
-               .byte HIDE_Y,$00,8,$07    ; 2: pulce (azzurro), nome 8/12
-               .byte HIDE_Y,$00,16,$0D   ; 3: ragno (magenta), nome 16/20
-               .byte HIDE_Y,$00,24,$08   ; 4: esplosione (rosso), nome 24/28/32
-               .byte HIDE_Y,$00,0,$00    ; 5: libero
-               .byte $D0                 ; 6: Y=$D0 = fine lista
+; SAT: 0 shot, 1 cannon, 2 flea, 3 spider, 4 explosion, 5 free
+SAT_BUFFER:    .byte HIDE_Y,$00,0,$0F    ; 0: shot (white)
+               .byte HIDE_Y,$00,4,$0B    ; 1: cannon (yellow)
+               .byte HIDE_Y,$00,8,$07    ; 2: flea (cyan), name 8/12
+               .byte HIDE_Y,$00,16,$0D   ; 3: spider (magenta), name 16/20
+               .byte HIDE_Y,$00,24,$08   ; 4: explosion (red), name 24/28/32
+               .byte HIDE_Y,$00,0,$00    ; 5: free
+               .byte $D0                 ; 6: Y=$D0 = end of the list
 
 HIDE_SPRITES:
   LDA #HIDE_Y
@@ -1764,10 +1767,10 @@ HIDE_SPRITES:
 
 
 ; ---------------------------------------------------------------
-; riempie SAT_BUFFER (solo RAM) dallo stato di gioco
+; fills SAT_BUFFER (RAM only) from the game state
 ; ---------------------------------------------------------------
 DRAW_SPRITES:
-  LDA BACT                     ; colpo
+  LDA BACT                     ; shot
   BEQ .dr_nob
   LDA BY
   SEC
@@ -1780,7 +1783,7 @@ DRAW_SPRITES:
   LDA #HIDE_Y
   STA SAT_BUFFER
 .dr_pl:
-  LDA DYING                    ; cannone
+  LDA DYING                    ; cannon
   BNE .dr_nop
   LDA PY
   SEC
@@ -1793,7 +1796,7 @@ DRAW_SPRITES:
   LDA #HIDE_Y
   STA SAT_BUFFER+4
 .dr_fl:
-  LDA FACT                     ; pulce
+  LDA FACT                     ; flea
   BEQ .dr_nof
   LDA FY
   SEC
@@ -1812,7 +1815,7 @@ DRAW_SPRITES:
   LDA #HIDE_Y
   STA SAT_BUFFER+8
 .dr_sp:
-  LDA SACT                     ; ragno
+  LDA SACT                     ; spider
   BEQ .dr_nos
   LDA SY
   SEC
@@ -1831,7 +1834,7 @@ DRAW_SPRITES:
   LDA #HIDE_Y
   STA SAT_BUFFER+12
 .dr_ex:
-  LDA DYING                    ; esplosione del cannone
+  LDA DYING                    ; explosion of the cannon
   BEQ .dr_noe
   LDA PY
   SEC
@@ -1862,9 +1865,9 @@ EXP_TAB:       .byte 24,28,32,32,28,24
 
 
 ; ---------------------------------------------------------------
-; disegna i record di una schermata sulla name table:
-;   .byte riga, colonna, lunghezza, tile...   (terminatore: riga = $FF)
-; PTR = inizio dei record. VDP libero (VDP_INT_OFF).
+; draws the records of a screen on the name table:
+;   .byte row, column, length, tile...   (terminator: row = $FF)
+; PTR = start of the records. VDP free (VDP_INT_OFF).
 ; ---------------------------------------------------------------
 DRAW_RECORDS:
 .dr_next:
@@ -1872,13 +1875,13 @@ DRAW_RECORDS:
   LDA (PTR),Y
   CMP #$FF
   BEQ .dr_end
-  STA T0                        ; riga
+  STA T0                        ; row
   INY
   LDA (PTR),Y
-  STA T1                        ; colonna
+  STA T1                        ; column
   INY
   LDA (PTR),Y
-  STA T2                        ; lunghezza
+  STA T2                        ; length
   LDA T0
   AND #$07
   ASL A
@@ -1888,14 +1891,14 @@ DRAW_RECORDS:
   ASL A
   CLC
   ADC T1
-  STA VREG                      ; byte basso: (riga mod 8)*32 + colonna
+  STA VREG                      ; low byte: (row mod 8)*32 + column
   LDA T0
   LSR A
   LSR A
   LSR A
   CLC
   ADC #(VDP_WRITE_VRAM_BIT | >VDP_NAME_TABLE_BASE)
-  STA VREG                      ; byte alto: $78 + riga/8
+  STA VREG                      ; high byte: $78 + row/8
   INY
 .dr_copy:
   LDA (PTR),Y
@@ -1903,7 +1906,7 @@ DRAW_RECORDS:
   INY
   DEC T2
   BNE .dr_copy
-  TYA                           ; PTR += 3 + lunghezza
+  TYA                           ; PTR += 3 + length
   CLC
   ADC PTR
   STA PTR
@@ -1922,7 +1925,7 @@ CLEAR_NAME_TABLE:
   STA VREG
   LDA #(VDP_WRITE_VRAM_BIT | >VDP_NAME_TABLE_BASE)
   STA VREG
-  LDX #3                        ; 768 byte = 3 pagine da 256
+  LDX #3                        ; 768 bytes = 3 pages of 256
 .cn_page:
   LDY #0
 .cn_byte:
@@ -1934,8 +1937,8 @@ CLEAR_NAME_TABLE:
   BNE .cn_page
   RTS
 
-; copia nella VRAM tutti i blocchi di VDP_BLOCKS (src, lunghezza, indirizzo VRAM):
-; pattern dei 3 terzi, sprite, colori dei 3 terzi
+; copies all the blocks of VDP_BLOCKS into the VRAM (src, length, VRAM address):
+; patterns of the 3 thirds, sprites, colours of the 3 thirds
 VDP_LOAD_ALL:
   LDA #<VDP_BLOCKS
   STA PTR
@@ -1951,13 +1954,13 @@ VDP_LOAD_ALL:
   STA VDP_INIT_HI
   INY
   LDA (PTR),Y
-  STA T0                        ; lunghezza, byte basso
+  STA T0                        ; length, low byte
   INY
   LDA (PTR),Y
-  STA T1                        ; lunghezza, byte alto
+  STA T1                        ; length, high byte
   INY
   LDA (PTR),Y
-  STA VREG                      ; indirizzo VRAM
+  STA VREG                      ; VRAM address
   INY
   LDA (PTR),Y
   STA VREG
@@ -1977,7 +1980,7 @@ VDP_LOAD_ALL:
   LDA T0
   ORA T1
   BNE .vl_cp
-  LDA PTR                       ; prossimo blocco: PTR += 6
+  LDA PTR                       ; next block: PTR += 6
   CLC
   ADC #6
   STA PTR
@@ -2040,24 +2043,24 @@ FILL_:
 ITAB:
    .byte $02,$C6,$0E,$FF       ;INITIALIZE G2 MODE
    .byte $03,$76,$03,$01       ;R0: G2 | R1: 16K, 16x16 sprite | R2: name $3800 | R3: color $2000
-                               ;R4: pattern $0000 | R5: SAT $3B00 | R6: sprite pattern $1800 | R7: sfondo nero
+                               ;R4: pattern $0000 | R5: SAT $3B00 | R6: sprite pattern $1800 | R7: black background
 
 
 ; ===============================================================
-;  MOTORE AUDIO
-;  Chip sinistro: A = effetto (tono), B = basso, C = effetto (rumore)
-;  Chip destro:   A = melodia,        B = effetto (tono), C = effetto (rumore)
-;  Il main loop chiede un effetto con SFX o un brano con PLAY_SONG;
-;  SND_TICK (chiamato dall'NMI, 60 Hz) fa avanzare tutto e scrive gli AY.
+;  SOUND ENGINE
+;  Left chip: A = effect (tone), B = bass, C = effect (noise)
+;  Right chip:  A = melody,        B = effect (tone), C = effect (noise)
+;  The main loop asks for an effect with SFX or a tune with PLAY_SONG;
+;  SND_TICK (called by the NMI, 60 Hz) moves everything on and writes the AYs.
 ; ===============================================================
-SND_INIT:                      ; silenzio su entrambi i chip
+SND_INIT:                      ; silence on both chips
   JSR SND_STOP
   LDX #10
 .si_l:
   LDA #$00
   CPX #7
   BNE .si_v
-  LDA #$3F                     ; mixer: tutto spento
+  LDA #$3F                     ; mixer: everything off
 .si_v:
   STX AY_L_LATCH
   STA AY_L_WRITE
@@ -2067,7 +2070,7 @@ SND_INIT:                      ; silenzio su entrambi i chip
   BPL .si_l
   RTS
 
-SND_STOP:                      ; ferma effetti e musica
+SND_STOP:                      ; stops effects and music
   LDA #$00
   STA SFX_REQ
   STA SFX_CNT
@@ -2081,7 +2084,7 @@ SND_STOP:                      ; ferma effetti e musica
   STA MUS_ON
   RTS
 
-; A = effetto (SFX_*). Si salva solo se non c'e' gia' una richiesta piu' importante.
+; A = effect (SFX_*). Saved only if there is no more important request already.
 SFX:
   PHX
   PHY
@@ -2100,14 +2103,14 @@ SFX:
   PLX
   RTS
 
-; X = brano (SONG_*): parte la melodia sul chip destro e il basso sul sinistro
+; X = tune (SONG_*): the melody starts on the right chip and the bass on the left
 PLAY_SONG:
   TXA
   ASL A
   ASL A
   TAY
   LDA #$00
-  STA MEL_ACT                  ; prima ferma le voci: l'NMI non le tocca mentre si imposta
+  STA MEL_ACT                  ; first stops the voices: the NMI does not touch them while they are set up
   STA BAS_ACT
   LDA SONG_TAB,Y
   STA MEL_PTR
@@ -2129,14 +2132,14 @@ PLAY_SONG:
   RTS
 
 ; ---------------------------------------------------------------
-; un frame di musica per la voce X (0 = melodia, 8 = basso)
+; one frame of music for voice X (0 = melody, 8 = bass)
 ; ---------------------------------------------------------------
 MUS_VOICE:
   LDA MEL_ACT,X
   BEQ .mv_end
   LDA MEL_CNT,X
   BEQ .mv_fetch
-  DEC MEL_CNT,X                ; nota in corso: il volume cala ogni 2 frame fino a 6
+  DEC MEL_CNT,X                ; note playing: the volume drops every 2 frames down to 6
   LDA MEL_CNT,X
   AND #$01
   BNE .mv_end
@@ -2150,7 +2153,7 @@ MUS_VOICE:
   LDA (MEL_PTR,X)
   CMP #$FF
   BNE .mv_note
-  LDA #$00                     ; fine brano
+  LDA #$00                     ; end of the tune
   STA MEL_ACT,X
   STA MEL_NOTE,X
   STA MEL_VOL,X
@@ -2161,7 +2164,7 @@ MUS_VOICE:
   BNE .mv_p1
   INC MEL_PTR+1,X
 .mv_p1:
-  LDA (MEL_PTR,X)              ; durata in frame
+  LDA (MEL_PTR,X)              ; length in frames
   STA MEL_CNT,X
   DEC MEL_CNT,X
   INC MEL_PTR,X
@@ -2176,10 +2179,10 @@ MUS_VOICE:
   STA MEL_TPL,X
   LDA NOTE_TAB-1,Y
   STA MEL_TPH,X
-  LDA #13                      ; attacco
+  LDA #13                      ; attack
   CPX #8
   BNE .mv_att
-  LDA #11                      ; il basso e' un po' piu' piano
+  LDA #11                      ; the bass is a bit softer
 .mv_att:
   STA MEL_VOL,X
   RTS
@@ -2190,10 +2193,10 @@ MUS_VOICE:
 
 
 ; ---------------------------------------------------------------
-; chiamato dall'NMI: usa A, X, Y
+; called by the NMI: uses A, X, Y
 ; ---------------------------------------------------------------
 SND_TICK:
-  LDA SFX_REQ                  ; --- nuovo effetto richiesto?
+  LDA SFX_REQ                  ; --- new effect requested?
   BEQ .st_nr
   TAX
   DEX                          ; id
@@ -2201,7 +2204,7 @@ SND_TICK:
   BEQ .st_load
   LDA SFX_RPRI
   CMP SFX_PRI
-  BCC .st_drop                 ; meno importante di quello in corso: scartato
+  BCC .st_drop                 ; less important than the one playing: dropped
 .st_load:
   TXA
   ASL A
@@ -2238,12 +2241,12 @@ SND_TICK:
 .st_clr:
   LDA #$00
   STA SFX_REQ
-  JMP .st_music                ; il frame in cui parte l'effetto non lo fa avanzare
+  JMP .st_music                ; the frame in which the effect starts does not move it on
 .st_nr:
-  LDA SFX_CNT                  ; --- avanza l'effetto
+  LDA SFX_CNT                  ; --- advances the effect
   BEQ .st_music
   DEC SFX_CNT
-  LDA SFX_DEL                  ; periodo += delta (con segno)
+  LDA SFX_DEL                  ; period += delta (signed)
   BMI .st_neg
   CLC
   ADC SFX_PL
@@ -2260,12 +2263,12 @@ SND_TICK:
 .st_pv:
   LDA SFX_PH
   BPL .st_pok
-  LDA #$01                     ; mai sotto zero
+  LDA #$01                     ; never below zero
   STA SFX_PL
   LDA #$00
   STA SFX_PH
 .st_pok:
-  LDA SFX_FLIP                 ; vibrato: inverte il delta
+  LDA SFX_FLIP                 ; vibrato: flips the delta
   BEQ .st_nf
   DEC SFX_FCNT
   BNE .st_nf
@@ -2277,7 +2280,7 @@ SND_TICK:
   ADC #$01
   STA SFX_DEL
 .st_nf:
-  LDA SFX_DEC                  ; il volume cala
+  LDA SFX_DEC                  ; the volume drops
   BEQ .st_music
   DEC SFX_DCNT
   BNE .st_music
@@ -2287,20 +2290,20 @@ SND_TICK:
   BEQ .st_music
   DEC SFX_VOL
 .st_music:
-  LDX #0                       ; --- musica
+  LDX #0                       ; --- music
   JSR MUS_VOICE
   LDX #8
   JSR MUS_VOICE
   LDA MEL_ACT
   ORA BAS_ACT
   STA MUS_ON
-  ; --- volumi e mixer (0 = canale acceso)
+  ; --- volumes and mixer (0 = channel on)
   LDA #$00
-  STA NT2                      ; volume effetto (tono)
+  STA NT2                      ; effect volume (tone)
   STA NT3                      ; volume effetto (rumore)
   LDA #$3F
-  STA NT0                      ; mixer sinistro
-  STA NT1                      ; mixer destro
+  STA NT0                      ; left mixer
+  STA NT1                      ; right mixer
   LDA SFX_CNT
   BEQ .st_nosfx
   LDA SFX_MODE
@@ -2312,7 +2315,7 @@ SND_TICK:
   AND #$FE                     ; tono A (sx)
   STA NT0
   LDA NT1
-  AND #$FD                     ; tono B (dx)
+  AND #$FD                     ; tone B (right)
   STA NT1
 .st_nt:
   LDA SFX_MODE
@@ -2321,25 +2324,25 @@ SND_TICK:
   LDA SFX_VOL
   STA NT3
   LDA NT0
-  AND #$DF                     ; rumore su C (sx)
+  AND #$DF                     ; noise on C (left)
   STA NT0
   LDA NT1
-  AND #$DF                     ; rumore su C (dx)
+  AND #$DF                     ; noise on C (right)
   STA NT1
 .st_nosfx:
   LDA MEL_VOL
   BEQ .st_nom
   LDA NT1
-  AND #$FE                     ; tono A (dx) = melodia
+  AND #$FE                     ; tone A (right) = melody
   STA NT1
 .st_nom:
   LDA BAS_VOL
   BEQ .st_nob
   LDA NT0
-  AND #$FD                     ; tono B (sx) = basso
+  AND #$FD                     ; tone B (left) = bass
   STA NT0
 .st_nob:
-  LDA SFX_PL                   ; --- registri 0,1,2,3,6,7,8,9,10 dei due chip
+  LDA SFX_PL                   ; --- registers 0,1,2,3,6,7,8,9,10 of the two chips
   STA LBUF
   STA RBUF+2
   LDA SFX_PH
@@ -2361,14 +2364,14 @@ SND_TICK:
   LDA NT1
   STA RBUF+5
   LDA NT2
-  STA LBUF+6                   ; vol A sx = effetto
-  STA RBUF+7                   ; vol B dx = effetto
+  STA LBUF+6                   ; vol A left = effect
+  STA RBUF+7                   ; vol B right = effect
   LDA BAS_VOL
-  STA LBUF+7                   ; vol B sx = basso
+  STA LBUF+7                   ; vol B left = bass
   LDA MEL_VOL
-  STA RBUF+6                   ; vol A dx = melodia
+  STA RBUF+6                   ; vol A right = melody
   LDA NT3
-  STA LBUF+8                   ; vol C = rumore
+  STA LBUF+8                   ; vol C = noise
   STA RBUF+8
   LDY #8
 .st_w:
@@ -2387,10 +2390,10 @@ AY_REGS:       .byte 0,1,2,3,6,7,8,9,10
 
 
 ; ===============================================================
-;  TABELLE (generate)
+;  TABLES (generated)
 ; ===============================================================
-; blocchi da copiare nella VRAM: sorgente (2), lunghezza (2), indirizzo VRAM + bit di scrittura (2)
-; (gli stessi tile e colori sono replicati nei 3 terzi dello schermo)
+; blocks to copy into the VRAM: source (2), length (2), VRAM address + write bit (2)
+; (the same tiles and colours are repeated in the 3 thirds of the screen)
 VDP_BLOCKS:
   .byte <PAT,>PAT,<(PAT_END-PAT),>(PAT_END-PAT),$00,$40
   .byte <PAT,>PAT,<(PAT_END-PAT),>(PAT_END-PAT),$00,$48
@@ -2400,7 +2403,7 @@ VDP_BLOCKS:
   .byte <COL,>COL,<(COL_END-COL),>(COL_END-COL),$00,$68
   .byte <COL,>COL,<(COL_END-COL),>(COL_END-COL),$00,$70
 
-; sprite 16x16 (generatore sprite): proiettile, giocatore, pulce x2, ragno x2, esplosione x3
+; 16x16 sprites (sprite generator): shot, player, flea x2, spider x2, explosion x3
 VDP_SPRITE:
   ; BULLET  (sprite name 0)
   .byte $18,$18,$18,$18,$18,$18,$18,$18,$00,$00,$00,$00,$00,$00,$00,$00
@@ -2431,7 +2434,7 @@ VDP_SPRITE:
   .byte $89,$92,$A4,$49,$14,$43,$10,$07,$07,$10,$43,$14,$49,$A4,$92,$89
 VDP_END_SPRITE:
 
-; pattern dei tile $00-$7F (replicati nei 3 terzi dello schermo)
+; patterns of tiles $00-$7F (repeated in the 3 thirds of the screen)
 PAT:
   .byte $00,$00,$00,$00,$00,$00,$00,$00   ; tile 00
   .byte $00,$00,$00,$00,$30,$18,$18,$3C
@@ -2563,7 +2566,7 @@ PAT:
   .byte $00,$00,$00,$00,$00,$00,$00,$00
 PAT_END:
 
-; colori dei tile $00-$7F (fg<<4 | bg, uno per riga)
+; colours of tiles $00-$7F (fg<<4 | bg, one per line)
 COL:
   .byte $11,$11,$11,$11,$11,$11,$11,$11   ; tile 00
   .byte $91,$91,$91,$91,$91,$E1,$E1,$E1
@@ -2696,15 +2699,15 @@ COL:
 COL_END:
 
 TITLE_REC:
-  .byte 3, 7, 18, $60, $61, $64, $65, $68, $69, $6C, $6D, $70, $71, $74, $75, $64, $65, $78, $79, $64, $65   ; CENTIPEDE (alto)
-  .byte 4, 7, 18, $62, $63, $66, $67, $6A, $6B, $6E, $6F, $72, $73, $76, $77, $66, $67, $7A, $7B, $66, $67   ; CENTIPEDE (basso)
+  .byte 3, 7, 18, $60, $61, $64, $65, $68, $69, $6C, $6D, $70, $71, $74, $75, $64, $65, $78, $79, $64, $65   ; CENTIPEDE (top)
+  .byte 4, 7, 18, $62, $63, $66, $67, $6A, $6B, $6E, $6F, $72, $73, $76, $77, $66, $67, $7A, $7B, $66, $67   ; CENTIPEDE (bottom)
   .byte 7, 9, 14, $4D, $49, $4E, $49, $56, $49, $43, $20, $41, $52, $43, $41, $44, $45   ; MINIVIC ARCADE
   .byte 10, 8, 15, $4A, $4F, $59, $53, $54, $49, $43, $4B, $20, $3D, $20, $4D, $4F, $56, $45   ; JOYSTICK = MOVE
   .byte 12, 8, 15, $42, $55, $54, $54, $4F, $4E, $20, $20, $20, $3D, $20, $46, $49, $52, $45   ; BUTTON   = FIRE
   .byte 14, 6, 21, $53, $45, $47, $4D, $45, $4E, $54, $20, $31, $30, $20, $20, $20, $48, $45, $41, $44, $20, $31, $30, $30   ; SEGMENT 10   HEAD 100
   .byte 16, 6, 24, $46, $4C, $45, $41, $20, $32, $30, $30, $20, $20, $53, $50, $49, $44, $45, $52, $20, $33, $30, $30, $2D, $39, $30, $30   ; FLEA 200  SPIDER 300-900
-  .byte 18, 10, 8, $05, $06, $05, $06, $05, $06, $05, $07   ; centipede decorativo
-  .byte 19, 6, 22, $00, $00, $04, $00, $00, $00, $00, $04, $00, $00, $00, $00, $00, $04, $00, $00, $00, $00, $00, $04, $00, $00   ; funghi
+  .byte 18, 10, 8, $05, $06, $05, $06, $05, $06, $05, $07   ; decorative centipede
+  .byte 19, 6, 22, $00, $00, $04, $00, $00, $00, $00, $04, $00, $00, $00, $00, $00, $04, $00, $00, $00, $00, $00, $04, $00, $00   ; mushrooms
   .byte $FF
 
 PRESS_REC:
@@ -2712,20 +2715,20 @@ PRESS_REC:
   .byte $FF
 
 OVER_REC:
-  .byte 10, 9, 14, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00   ; cancella
+  .byte 10, 9, 14, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00   ; erase
   .byte 11, 11, 10, $47, $41, $4D, $45, $20, $20, $4F, $56, $45, $52   ; GAME  OVER
-  .byte 12, 9, 14, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00   ; cancella
+  .byte 12, 9, 14, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00   ; erase
   .byte 13, 9, 14, $50, $52, $45, $53, $53, $20, $41, $20, $42, $55, $54, $54, $4F, $4E   ; PRESS A BUTTON
   .byte $FF
 
-; riga 0 dello schermo di gioco (etichette fisse; le cifre vengono aggiornate dal gioco)
+; row 0 of the game screen (fixed labels; the digits are updated by the game)
 HUD_STATIC:
   .byte $00,$30,$30,$30,$30,$30,$30,$00,$00,$00,$00,$00,$00,$00,$00,$4C
   .byte $56,$00,$00,$00,$00,$48,$49,$00,$30,$30,$30,$30,$30,$30,$00,$00
 ; ===============================================================
-;  AUDIO (2 x AY-3-8910, clock 1 MHz: periodo = 62500 / frequenza)
+;  AUDIO (2 x AY-3-8910, clock 1 MHz: period = 62500 / frequency)
 ; ===============================================================
-; note C2..B6 (indice 1-60): periodo del tono a 12 bit, lo/hi
+; notes C2..B6 (index 1-60): 12-bit tone period, lo/hi
 NOTE_TAB:
   .byte $BC,$03,$86,$03,$53,$03,$24,$03,$F6,$02,$CC,$02,$A4,$02,$7E,$02,$5A,$02,$38,$02,$18,$02,$FA,$01
   .byte $DE,$01,$C3,$01,$AA,$01,$92,$01,$7B,$01,$66,$01,$52,$01,$3F,$01,$2D,$01,$1C,$01,$0C,$01,$FD,$00
@@ -2733,7 +2736,7 @@ NOTE_TAB:
   .byte $77,$00,$71,$00,$6A,$00,$64,$00,$5F,$00,$59,$00,$54,$00,$50,$00,$4B,$00,$47,$00,$43,$00,$3F,$00
   .byte $3C,$00,$38,$00,$35,$00,$32,$00,$2F,$00,$2D,$00,$2A,$00,$28,$00,$26,$00,$24,$00,$22,$00,$20,$00
 
-; brani: (nota, durata in frame) ... $FF.  nota 0 = pausa
+; tunes: (note, length in frames) ... $FF.  note 0 = rest
 SONG_TITLE_MEL:
   .byte 34,8,37,8,41,8,46,8,41,8,37,8,34,8,29,8
   .byte 32,8,36,8,39,8,44,8,39,8,36,8,32,8,27,8
@@ -2757,15 +2760,15 @@ SONG_LIFE_MEL:
 SONG_LIFE_BAS:
   .byte 255
 
-; indirizzi dei brani: melodia (2), basso (2)
+; addresses of the tunes: melody (2), bass (2)
 SONG_TAB:
   .byte <SONG_TITLE_MEL,>SONG_TITLE_MEL,<SONG_TITLE_BAS,>SONG_TITLE_BAS
   .byte <SONG_OVER_MEL,>SONG_OVER_MEL,<SONG_OVER_BAS,>SONG_OVER_BAS
   .byte <SONG_LEVEL_MEL,>SONG_LEVEL_MEL,<SONG_LEVEL_BAS,>SONG_LEVEL_BAS
   .byte <SONG_LIFE_MEL,>SONG_LIFE_MEL,<SONG_LIFE_BAS,>SONG_LIFE_BAS
 
-; effetti: modo, priorita, durata, periodo lo/hi, delta (con segno, per frame), volume,
-;          ogni quanti frame cala il volume, periodo del rumore, ogni quanti frame inverte il delta
+; effects: mode, priority, length, period lo/hi, delta (signed, per frame), volume,
+;          every how many frames the volume drops, noise period, every how many frames the delta flips
 SFX_TAB:
   .byte 1,1,14,$28,$00,$05,13,2,0,0   ; SHOT0
   .byte 1,1,10,$B4,$00,$F4,12,2,0,0   ; SHOT1

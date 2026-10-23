@@ -1,69 +1,72 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;                                                              ;
-;   ARCADE_003  -  DAVIDE vs ELIA, basket 1 contro 1  + SOUND  ;
+;   ARCADE_003  -  DAVIDE vs ELIA, 1 on 1 basketball  + SOUND  ;
 ;   65C02 assembly, TMS9918A Graphics II                       ;
 ;   Base: arcade_002 (NMI/vblank + SAT buffer, VDP, joystick)  ;
 ;                                                              ;
-;   - P1 (DAVIDE) su PORTA $D581, attacca il canestro destro   ;
-;     P2 (ELIA)   su PORTB $D580, attacca il canestro sinistro ;
-;   - joystick = muove; un tasto qualsiasi (bit4 o bit5):      ;
-;       con la palla  -> TIRO (salto, la palla parte al vertice)
-;       senza palla   -> SALTO: ruba la palla se sei vicino,   ;
-;                        o STOPPA il tiro se salti al momento  ;
-;                        giusto mentre l'avversario tira       ;
-;   - dentro la linea = 2 punti, fuori dall'arco = 3 punti     ;
-;   - dopo un canestro la palla passa all'avversario           ;
-;   - vince chi arriva a WIN_SCORE (21) punti                  ;
-;   - SONORO (2 x AY-3-8910): canzone al titolo, tiro segnato,  ;
-;     tiro sbagliato, palleggio, applauso (canestro, stoppata,   ;
-;     furto); a fine partita applauso + gridi + canzone         ;
-;   - tutta la grafica del campo e' nelle tabelle in fondo     ;
-;     (generate: campo, sprite, tabelle di salto e di traiettoria)
+;   - P1 (DAVIDE) on PORTA $D581, attacks the right basket     ;
+;     P2 (ELIA)   on PORTB $D580, attacks the left basket      ;
+;   - joystick = move; any button (bit4 or bit5):              ;
+;       with the ball -> SHOT (jump, the ball leaves at        ;
+;                        the top of the jump)                  ;
+;       without ball  -> JUMP: steals the ball if you are      ;
+;                        close, or BLOCKS the shot if you jump ;
+;                        right while the opponent shoots       ;
+;   - inside the line = 2 points, beyond the arc = 3 points    ;
+;   - after a basket the ball goes to the opponent             ;
+;   - the first to reach WIN_SCORE (21) points wins            ;
+;   - SOUND (2 x AY-3-8910): title song, basket scored,        ;
+;     missed shot, dribbling, applause (basket, block,         ;
+;     steal); at the end applause + cheers + song              ;
+;   - all the graphics of the court are in the tables at       ;
+;     the bottom (generated: court, sprites, jump and          ;
+;     trajectory tables)                                       ;
+;                                                              ;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-; ---------------- zero page (usate per la copia dei blocchi VDP) ----------------
+; ---------------- zero page (used to copy the VDP blocks) ----------------
 VDP_INIT                 = $30
 VDP_INIT_HI              = $31
 
-; ---------------- zero page: dati dei due giocatori ----------------
-; ogni voce occupa 2 byte: indice X = 0 (DAVIDE) oppure 1 (ELIA)
-P_X                      = $60     ; X sprite (bordo sinistro, sprite largo 16)
-P_FY                     = $62     ; Y dei piedi (posizione sul campo)
-P_FACE                   = $64     ; 0 = guarda a destra, 1 = a sinistra
-P_JOY                    = $66     ; joystick, 1 = premuto
-P_OLD                    = $68     ; stato pulsanti al frame precedente
-P_EDGE                   = $6A     ; pulsante appena premuto
-P_WALK                   = $6C     ; contatore animazione gambe
-P_JUMP                   = $6E     ; frame di salto rimasti (0 = a terra)
-P_COOL                   = $70     ; attesa dopo il salto
-P_SHOT                   = $72     ; 1 = il salto in corso e' un tiro
-P_SCORE                  = $74     ; punteggio
+; ---------------- zero page: data of the two players ----------------
+; every entry takes 2 bytes: index X = 0 (DAVIDE) or 1 (ELIA)
+P_X                      = $60     ; sprite X (left edge, sprite 16 wide)
+P_FY                     = $62     ; Y of the feet (position on the court)
+P_FACE                   = $64     ; 0 = facing right, 1 = facing left
+P_JOY                    = $66     ; joystick, 1 = pressed
+P_OLD                    = $68     ; buttons in the previous frame
+P_EDGE                   = $6A     ; button just pressed
+P_WALK                   = $6C     ; animation counter of the legs
+P_JUMP                   = $6E     ; jump frames left (0 = on the ground)
+P_COOL                   = $70     ; wait after the jump
+P_SHOT                   = $72     ; 1 = the jump in progress is a shot
+P_SCORE                  = $74     ; score
 
-; ---------------- zero page: palla e stato di gioco ----------------
-HOLDER                   = $76     ; chi ha la palla (valido se BSTATE = 0)
-BSTATE                   = $77     ; 0 = in mano, 1 = tiro in volo, 2 = libera, 3 = nella retina
-B_T                      = $78     ; contatore frame della fase
-B_PTS                    = $79     ; punti del tiro in volo (2 o 3)
-B_MAKE                   = $7A     ; 1 = il tiro va a canestro
-SHOOTER                  = $7B     ; chi ha tirato
-B_GXL                    = $7C     ; posizione a terra della palla, 8.8
+; ---------------- zero page: ball and game state ----------------
+HOLDER                   = $76     ; who has the ball (valid if BSTATE = 0)
+BSTATE                   = $77     ; 0 = in hand, 1 = shot in flight, 2 = loose, 3 = in the net
+B_T                      = $78     ; frame counter of the phase
+B_PTS                    = $79     ; points of the shot in flight (2 or 3)
+B_MAKE                   = $7A     ; 1 = the shot goes in
+SHOOTER                  = $7B     ; who shot
+B_GXL                    = $7C     ; position of the ball on the ground, 8.8
 B_GXH                    = $7D
 B_GYL                    = $7E
 B_GYH                    = $7F
-B_VXL                    = $80     ; velocita' per frame, 8.8 con segno
+B_VXL                    = $80     ; velocity per frame, 8.8 signed
 B_VXH                    = $81
 B_VYL                    = $82
 B_VYH                    = $83
-B_H                      = $84     ; altezza della palla da terra (pixel)
-FREEZE                   = $85     ; frame di pausa (dopo canestro / inizio)
+B_H                      = $84     ; height of the ball above the ground (pixels)
+FREEZE                   = $85     ; pause frames (after a basket / at the start)
 RND                      = $86
-MSG_NEW                  = $87     ; messaggio da scrivere ($FF = nessuno)
+MSG_NEW                  = $87     ; message to write ($FF = none)
 MSG_TMR                  = $88
 HUD_DIRTY                = $89
 WINNER                   = $8A
 ARMED                    = $8B
 GO_DELAY                 = $8C
-DRB                      = $8D     ; fase del palleggio
+DRB                      = $8D     ; phase of the dribble
 T0                       = $90
 T1                       = $91
 T2                       = $92
@@ -72,48 +75,48 @@ T4                       = $94
 T5                       = $95
 T6                       = $96
 T7                       = $97
-PTR                      = $98     ; 2 byte
+PTR                      = $98     ; 2 bytes
 
 PORTB_JOY = $d580        ;         |P2|P1|RG|LF|DW|UP (LSB)   joystick 2
 PORTA_JOY = $d581        ;         |P2|P1|RG|LF|DW|UP (LSB)   joystick 1
 DDRB_JOY  = $d582        ;
 DDRA_JOY  = $d583        ;
 
-; ---------------- parametri di gioco ----------------
-WIN_SCORE     = 21       ; punti per vincere
-SPEED_X       = 2        ; pixel per frame in orizzontale
-SPEED_Y       = 1        ; pixel per frame in verticale (prospettiva)
-JUMP_LEN      = 24       ; durata del salto (frame)
-RELEASE_AT    = 12       ; la palla parte quando mancano 12 frame (vertice del salto)
-COOL_LEN      = 12       ; attesa dopo un salto
-BLOCK_LO      = 5        ; finestra di salto del difensore che stoppa il tiro:
-BLOCK_HI      = 19       ;   P_JUMP del difensore compreso tra BLOCK_LO e BLOCK_HI
-CONTEST_DX    = 26       ; difensore "addosso": distanza massima in X ...
-CONTEST_DY    = 14       ; ... e in Y
-CONTEST_PEN   = 50       ; penalita' sulla probabilita' se il tiro e' contrastato
-STEAL_DX      = 18       ; furto: distanza massima
+; ---------------- game parameters ----------------
+WIN_SCORE     = 21       ; points to win
+SPEED_X       = 2        ; horizontal pixels per frame
+SPEED_Y       = 1        ; vertical pixels per frame (perspective)
+JUMP_LEN      = 24       ; length of the jump (frames)
+RELEASE_AT    = 12       ; the ball leaves 12 frames before the end (top of the jump)
+COOL_LEN      = 12       ; wait after a jump
+BLOCK_LO      = 5        ; jump window of the defender who blocks the shot:
+BLOCK_HI      = 19       ;   P_JUMP of the defender between BLOCK_LO and BLOCK_HI
+CONTEST_DX    = 26       ; defender "on him": largest distance along X ...
+CONTEST_DY    = 14       ; ... and along Y
+CONTEST_PEN   = 50       ; penalty on the probability when the shot is contested
+STEAL_DX      = 18       ; steal: largest distance
 STEAL_DY      = 10
-STEAL_PROB    = 128      ; probabilita' di rubare (su 256)
-PROB_KEY      = 200      ; probabilita' di segnare: sotto canestro (area)
-PROB_MID      = 150      ;   da dentro l'arco (2 punti)
-PROB_FAR      = 100      ;   da fuori dall'arco (3 punti)
-FY_MIN        = 64       ; limiti verticali (piedi)
+STEAL_PROB    = 128      ; probability of a steal (out of 256)
+PROB_KEY      = 200      ; probability of scoring: under the basket (paint)
+PROB_MID      = 150      ;   from inside the arc (2 points)
+PROB_FAR      = 100      ;   from beyond the arc (3 points)
+FY_MIN        = 64       ; vertical limits (feet)
 FY_MAX        = 188
-RIM_GY        = 105      ; riga a terra sotto il ferro (ferro = 72, altezza 30, raggio palla 3)
-H_START       = 36       ; altezza della palla al tiro
-BLOCK_AWAY    = 22       ; di quanto rimbalza all'indietro una palla stoppata
-RIM_BACK      = 18       ; rimbalzo sul ferro: distanza minima dal canestro
+RIM_GY        = 105      ; ground row under the rim (rim = 72, height 30, ball radius 3)
+H_START       = 36       ; height of the ball when shot
+BLOCK_AWAY    = 22       ; how far a blocked ball bounces back
+RIM_BACK      = 18       ; bounce on the rim: minimum distance from the basket
 FREEZE_FRAMES = 50
 MSG_FRAMES    = 90
-HIDE_Y        = $C0      ; Y fuori schermo (NON $D0: fermerebbe la lista sprite)
+HIDE_Y        = $C0      ; off-screen Y (NOT $D0: it would stop the sprite list)
 BTN_MASK      = %00110000
 
-D_START_X     = 92       ; posizioni di partenza (Davide a sinistra, Elia a destra)
+D_START_X     = 92       ; starting positions (Davide on the left, Elia on the right)
 D_START_Y     = 118
 E_START_X     = 132
 E_START_Y     = 126
 
-; messaggi (indice nella tabella MSG_TAB)
+; messages (index in the MSG_TAB table)
 MSG_P_DAVIDE  = 1
 MSG_P_ELIA    = 2
 MSG_2         = 3
@@ -121,68 +124,68 @@ MSG_3         = 4
 MSG_BLOCK     = 5
 MSG_STEAL     = 6
 
-; nomi degli sprite (pattern = indice * 4)
+; names of the sprites (pattern = index * 4)
 SPR_TOP_IDLE  = 8
 SPR_TOP_SHOOT = 12
 SPR_TOP_DEF   = 16
 SPR_BOT_A     = 32
 SPR_BOT_B     = 36
 SPR_BOT_JUMP  = 40
-SPR_LEFT_ADD  = 12       ; i frame verso sinistra sono 12 pattern piu' avanti
+SPR_LEFT_ADD  = 12       ; the frames facing left are 12 patterns further on
 
 BLOCK_COUNT   = 7        ; blocchi in VDP_BLOCKS
-BIG0          = $80      ; cifre grandi 0-9: 4 tile ciascuna (alto-sx, alto-dx, basso-sx, basso-dx)
+BIG0          = $80      ; big digits 0-9: 4 tiles each (top-left, top-right, bottom-left, bottom-right)
 
 
-; ---------------- sonoro: porte dei due AY-3-8910 (come tank_sound.asm) ----------------
-AY_R_LATCH = $D380       ; AY destro  (Elia)
+; ---------------- sound: ports of the two AY-3-8910 (as in tank_sound.asm) ----------------
+AY_R_LATCH = $D380       ; right AY  (Elia)
 AY_R_WRITE = $D381
-AY_L_LATCH = $D384       ; AY sinistro (Davide)
+AY_L_LATCH = $D384       ; left AY (Davide)
 AY_L_WRITE = $D385
 
-; ---------------- zero page: sonoro (tutto suonato da SND_TICK, chiamata dall'NMI) ----------------
-SH_L       = $A0         ; shadow registri AY sinistro 0-10  (11 byte)
-SH_R       = $B0         ; shadow registri AY destro   0-10  (SH_R = SH_L + 16)
-SND_STAGE  = $BB         ; finale: 0 = applauso, 1 = gridi
-SND_T2     = $BC         ; finale: frame trascorsi nella fase
-SND_CMD    = $C0         ; comando al motore sonoro (CMD_*), eseguito dall'NMI
-SND_MODE   = $C1         ; 0 = effetti di gioco, 1 = canzone, 2 = applauso + gridi finali
-SND_BUSY   = $C2         ; 1 finche' la canzone (o il finale) sta suonando
-SFX_REQ    = $C3         ; richiesta di effetto (EVT_*), 0 = nessuna
-SFX_EVT    = $C4         ; effetto in corso (0 = nessuno)
-SFX_STEP   = $C5         ; frame trascorsi nell'effetto
-SFX_DRIB   = $C6         ; palleggio: 2 byte (Davide / Elia), passo 1..6 (0 = spento)
-SND_PH     = $C8         ; fase (conta i frame)
+; ---------------- zero page: sound (all played by SND_TICK, called by the NMI) ----------------
+SH_L       = $A0         ; shadow of the left AY registers 0-10  (11 bytes)
+SH_R       = $B0         ; shadow of the right AY registers 0-10  (SH_R = SH_L + 16)
+SND_STAGE  = $BB         ; ending: 0 = applause, 1 = cheers
+SND_T2     = $BC         ; ending: frames elapsed in the phase
+SND_CMD    = $C0         ; command to the sound engine (CMD_*), run by the NMI
+SND_MODE   = $C1         ; 0 = game effects, 1 = song, 2 = applause + final cheers
+SND_BUSY   = $C2         ; 1 while the song (or the ending) is playing
+SFX_REQ    = $C3         ; effect request (EVT_*), 0 = none
+SFX_EVT    = $C4         ; effect playing (0 = none)
+SFX_STEP   = $C5         ; frames elapsed in the effect
+SFX_DRIB   = $C6         ; dribble: 2 bytes (Davide / Elia), step 1..6 (0 = off)
+SND_PH     = $C8         ; phase (counts the frames)
 SND_RND    = $C9
-SN0        = $CA         ; temporanei del sonoro
+SN0        = $CA         ; sound temporaries
 SN1        = $CB
 SND_T1     = $CC
-SFX_APPL   = $CD         ; applauso: frame trascorsi (0 = spento)
-SFX_ADLY   = $CE         ; frame che mancano all'inizio dell'applauso
-TR_PL      = $D0         ; 4 tracce: puntatore (lo / hi), contatore, attiva,
-TR_PH      = $D4         ;           nota, volume, eta' della nota
+SFX_APPL   = $CD         ; applause: frames elapsed (0 = off)
+SFX_ADLY   = $CE         ; frames left before the applause starts
+TR_PL      = $D0         ; 4 tracks: pointer (lo / hi), counter, active,
+TR_PH      = $D4         ;           note, volume, age of the note
 TR_CT      = $D8
 TR_ACT     = $DC
 TR_NOTE    = $E0
 TR_VOL     = $E4
 TR_AGE     = $E8
-SND_PTR    = $EC         ; 2 byte
+SND_PTR    = $EC         ; 2 bytes
 
-CMD_GAME   = 1           ; silenzio + effetti di gioco
-CMD_TITLE  = 2           ; canzone del titolo
-CMD_WIN    = 3           ; applauso + gridi + canzone di vittoria
+CMD_GAME   = 1           ; silence + game effects
+CMD_TITLE  = 2           ; title song
+CMD_WIN    = 3           ; applause + cheers + victory song
 
-EVT_SCORE  = 1           ; tiro segnato (+ applauso)
-EVT_MISS   = 2           ; tiro sbagliato (ferro)
-EVT_BLOCK  = 3           ; stoppata (+ applauso)
-EVT_STEAL  = 4           ; palla rubata (+ applauso)
+EVT_SCORE  = 1           ; basket scored (+ applause)
+EVT_MISS   = 2           ; missed shot (rim)
+EVT_BLOCK  = 3           ; block (+ applause)
+EVT_STEAL  = 4           ; ball stolen (+ applause)
 
-APPL_LEN       = 96      ; durata dell'applauso in partita (frame)
-CELEB_APPL_LEN = 150     ; applauso finale (frame)
-CHEER_LEN      = 112     ; gridi finali (frame)
-DRIB_LEN       = 6       ; durata del tonfo del palleggio (frame)
+APPL_LEN       = 96      ; length of the applause during the game (frames)
+CELEB_APPL_LEN = 150     ; final applause (frames)
+CHEER_LEN      = 112     ; final cheers (frames)
+DRIB_LEN       = 6       ; length of the thud of the dribble (frames)
 
- .org $0FD0               ; trampolino chiamato da NMI_HANDLER (bios) con JSR $0FD0
+ .org $0FD0               ; trampoline called by NMI_HANDLER (bios) with JSR $0FD0
 DISPATCH:
   JMP NMI_TASK
 
@@ -203,9 +206,9 @@ VDP_REGISTER_BITS      = %10000000  ; pattern of second register write: 10000RRR
 RESET:
   JSR VDP_SET_REGISTERS        ; Setting VDP register
   JSR CLEAR_VRAM
-  JSR VDP_LOAD_ALL             ; pattern, colori e sprite nella VRAM
+  JSR VDP_LOAD_ALL             ; patterns, colours and sprites into the VRAM
 
-  ; joystick: PORTA e PORTB in input
+  ; joystick: PORTA and PORTB as inputs
   LDA #$00
   STA DDRA_JOY
   STA DDRB_JOY
@@ -219,9 +222,9 @@ RESET:
   STA RND
   JSR HIDE_SPRITES
 
-  JSR SND_INIT                 ; AY a zero (l'interrupt VDP e' ancora spento)
+  JSR SND_INIT                 ; AY silent (the VDP interrupt is still off)
 
-  ; abilita l'interrupt del VDP (R1: 16K + display ON + INT ON = $E6)
+  ; enable the VDP interrupt (R1: 16K + display ON + INT ON = $E6)
   LDA #$E6
   STA VREG
   LDA #(VDP_REGISTER_BITS | 1)
@@ -230,13 +233,13 @@ RESET:
 
 
 ; ===============================================================
-;  SCHERMATA START
+;  START SCREEN
 ; ===============================================================
 TITLE:
   LDX #$FF
-  TXS                          ; da qui non si torna indietro: stack pulito
+  TXS                          ; no way back from here: clean stack
   JSR HIDE_SPRITES
-  JSR VDP_INT_OFF              ; da ora il main loop puo' scrivere sul VDP
+  JSR VDP_INT_OFF              ; from now on the main loop can write the VDP
   JSR CLEAR_NAME_TABLE
   LDA #<TITLE_REC
   STA PTR
@@ -244,12 +247,12 @@ TITLE:
   STA PTR+1
   JSR DRAW_RECORDS
   JSR VDP_INT_ON
-  LDA #$01                     ; parte la canzone del titolo ...
+  LDA #$01                     ; the title song starts ...
   STA SND_BUSY
   LDA #CMD_TITLE
   STA SND_CMD
 .ti_song:
-  JSR WAIT_FRAME               ; ... il tasto non viene letto finche' suona
+  JSR WAIT_FRAME               ; ... the button is not read while it plays
   LDA SND_BUSY
   BNE .ti_song
   JSR VDP_INT_OFF
@@ -260,17 +263,17 @@ TITLE:
   JSR DRAW_RECORDS             ; compare "PRESS A BUTTON"
   JSR VDP_INT_ON
   JSR WAIT_FIRE
-  LDA FRAME_CNT                ; il momento in cui premi il tasto semina il caso
+  LDA FRAME_CNT                ; the moment you press the button seeds the random generator
   ORA #$01
   STA RND
   JMP NEW_GAME
 
 
 ; ===============================================================
-;  NUOVA PARTITA
+;  NEW GAME
 ; ===============================================================
 NEW_GAME:
-  LDA #CMD_GAME                ; silenzio, effetti di gioco
+  LDA #CMD_GAME                ; silence, game effects
   STA SND_CMD
   LDA #$00
   STA P_SCORE
@@ -284,10 +287,10 @@ NEW_GAME:
   STA MSG_NEW
   JSR HIDE_SPRITES
   JSR VDP_INT_OFF
-  JSR LOAD_GAME_NAME_TABLE     ; campo + nomi
-  JSR DRAW_HUD                 ; punteggi grandi a fianco dei nomi
+  JSR LOAD_GAME_NAME_TABLE     ; court + names
+  JSR DRAW_HUD                 ; big scores beside the names
   JSR VDP_INT_ON
-  JSR NEXT_RND                 ; il primo possesso e' a caso
+  JSR NEXT_RND                 ; the first possession is random
   LDA RND
   AND #$01
   JSR START_POSS
@@ -297,7 +300,7 @@ GAME_LOOP:
   JSR READ_JOY
   LDA FREEZE
   BEQ .gl_active
-  DEC FREEZE                   ; pausa: tutto fermo, solo il palleggio
+  DEC FREEZE                   ; pause: everything still, only the dribble
   LDA P_JOY
   AND #BTN_MASK
   STA P_OLD
@@ -315,7 +318,7 @@ GAME_LOOP:
   JSR UPDATE_BALL
 .gl_draw:
   JSR DRAW_ALL
-  JSR WAIT_FRAME               ; sincronizza il loop al vblank (NMI)
+  JSR WAIT_FRAME               ; syncs the loop to the vblank (NMI)
   LDA HUD_DIRTY
   BEQ .gl_msg
   LDA #$00
@@ -326,7 +329,7 @@ GAME_LOOP:
   BEQ .gl_pend
   DEC MSG_TMR
   BNE .gl_pend
-  LDA #$00                     ; tempo scaduto: cancella il messaggio
+  LDA #$00                     ; time over: erase the message
   STA MSG_NEW
 .gl_pend:
   LDA MSG_NEW
@@ -340,7 +343,7 @@ GAME_LOOP:
 
 
 ; ---------------------------------------------------------------
-; legge i due joystick (1 = premuto)
+; reads both joysticks (1 = pressed)
 ; ---------------------------------------------------------------
 READ_JOY:
   LDA PORTA_JOY
@@ -365,9 +368,9 @@ NEXT_RND:                      ; LFSR a 8 bit
 
 
 ; ---------------------------------------------------------------
-; inizio possesso: A = chi ha la palla (0 = Davide, 1 = Elia).
-; Rimette i giocatori in posizione: Davide attacca a destra, quindi
-; il suo difensore (Elia) sta alla sua destra; e viceversa.
+; start of a possession: A = who has the ball (0 = Davide, 1 = Elia).
+; Puts the players back in place: Davide attacks to the right, so
+; his defender (Elia) stands on his right; and vice versa.
 ; ---------------------------------------------------------------
 START_POSS:
   STA HOLDER
@@ -381,9 +384,9 @@ START_POSS:
   STA P_SHOT+1
   STA P_WALK
   STA P_WALK+1
-  STA P_FACE                   ; Davide guarda a destra
+  STA P_FACE                   ; Davide faces right
   LDA #$01
-  STA P_FACE+1                 ; Elia guarda a sinistra
+  STA P_FACE+1                 ; Elia faces left
   LDA #D_START_X
   STA P_X
   LDA #D_START_Y
@@ -396,10 +399,10 @@ START_POSS:
   STA FREEZE
   LDA HOLDER
   CLC
-  ADC #MSG_P_DAVIDE            ; 1 = PALLA A DAVIDE, 2 = PALLA A ELIA
+  ADC #MSG_P_DAVIDE            ; 1 = BALL TO DAVIDE, 2 = BALL TO ELIA
   JMP SHOW_MSG
 
-SHOW_MSG:                      ; A = indice messaggio
+SHOW_MSG:                      ; A = message index
   STA MSG_NEW
   LDA #MSG_FRAMES
   STA MSG_TMR
@@ -407,7 +410,7 @@ SHOW_MSG:                      ; A = indice messaggio
 
 
 ; ---------------------------------------------------------------
-; distanza tra il giocatore X e l'altro: T0 = |dx|, T1 = |dy|  (X preservato)
+; distance between player X and the other one: T0 = |dx|, T1 = |dy|  (X preserved)
 ; ---------------------------------------------------------------
 DIST_OTHER:
   LDA P_X,X
@@ -440,11 +443,11 @@ DIST_OTHER:
   TAX
   RTS
 
-; distanza tra il piede del giocatore X e la palla: T0 = |dx|, T1 = |dy|
+; distance between the feet of player X and the ball: T0 = |dx|, T1 = |dy|
 DIST_BALL:
   LDA P_X,X
   CLC
-  ADC #8                       ; centro dello sprite
+  ADC #8                       ; centre of the sprite
   SEC
   SBC B_GXH
   BCS .db_x
@@ -466,10 +469,10 @@ DIST_BALL:
 
 
 ; ---------------------------------------------------------------
-; aggiorna un giocatore: X = giocatore (0/1)
+; updates a player: X = player (0/1)
 ; ---------------------------------------------------------------
 UPDATE_PLAYER:
-  LDA P_JOY,X                  ; fronte di salita del pulsante
+  LDA P_JOY,X                  ; rising edge of the button
   AND #BTN_MASK
   STA T0
   LDA P_OLD,X
@@ -484,7 +487,7 @@ UPDATE_PLAYER:
 .up_nocool:
   LDA P_JUMP,X
   BEQ .up_ground
-  ; ---- in aria: nessun movimento, il salto avanza ----
+  ; ---- in the air: no movement, the jump goes on ----
   DEC P_JUMP,X
   BNE .up_air
   LDA #COOL_LEN
@@ -498,7 +501,7 @@ UPDATE_PLAYER:
   LDA P_JUMP,X
   CMP #RELEASE_AT
   BNE .up_end
-  JMP SHOT_RELEASE             ; vertice del salto: la palla parte
+  JMP SHOT_RELEASE             ; top of the jump: the ball leaves
 .up_end:
   RTS
 .up_ground:
@@ -506,17 +509,17 @@ UPDATE_PLAYER:
   BEQ .up_move
   LDA P_COOL,X
   BNE .up_move
-  JMP START_ACTION             ; tiro o salto
+  JMP START_ACTION             ; shot or jump
 .up_move:
   LDA P_JOY,X
   AND #%00001111
   BNE .up_dirs
   LDA #$00
-  STA P_WALK,X                 ; fermo: gambe in posizione base
+  STA P_WALK,X                 ; standing: legs in the base position
   RTS
 .up_dirs:
   LDA P_JOY,X
-  AND #%00001000               ; destra
+  AND #%00001000               ; right
   BEQ .up_nr
   LDA P_X,X
   CLC
@@ -526,7 +529,7 @@ UPDATE_PLAYER:
   STA P_FACE,X
 .up_nr:
   LDA P_JOY,X
-  AND #%00000100               ; sinistra
+  AND #%00000100               ; left
   BEQ .up_nl
   LDA P_X,X
   SEC
@@ -536,7 +539,7 @@ UPDATE_PLAYER:
   STA P_FACE,X
 .up_nl:
   LDA P_JOY,X
-  AND #%00000001               ; su
+  AND #%00000001               ; up
   BEQ .up_nu
   LDA P_FY,X
   SEC
@@ -552,7 +555,7 @@ UPDATE_PLAYER:
   STA P_FY,X
 .up_nd:
   INC P_WALK,X
-  ; ---- limiti del campo (trapezio: i lati sono inclinati) ----
+  ; ---- edges of the court (a trapezoid: the sides are slanted) ----
   LDA P_FY,X
   CMP #FY_MIN
   BCS .up_c1
@@ -591,8 +594,8 @@ UPDATE_PLAYER:
 
 
 ; ---------------------------------------------------------------
-; pulsante premuto a terra: X = giocatore
-;   con la palla -> inizia il tiro; senza -> salto (furto / stoppata)
+; button pressed on the ground: X = player
+;   with the ball -> starts the shot; without -> jump (steal / block)
 ; ---------------------------------------------------------------
 START_ACTION:
   LDA #JUMP_LEN
@@ -601,24 +604,24 @@ START_ACTION:
   BNE .sa_def
   CPX HOLDER
   BNE .sa_def
-  LDA #$01                     ; tiro
+  LDA #$01                     ; shot
   STA P_SHOT,X
-  TXA                          ; si gira verso il suo canestro: Davide (0) a destra, Elia (1) a sinistra
+  TXA                          ; turns towards his basket: Davide (0) to the right, Elia (1) to the left
   STA P_FACE,X
   RTS
 .sa_def:
   LDA #$00
   STA P_SHOT,X
   LDA BSTATE
-  BNE .sa_end                  ; palla non in mano a nessuno
+  BNE .sa_end                  ; ball in nobody's hands
   TXA
   EOR #$01
-  TAX                          ; X = chi ha la palla
+  TAX                          ; X = who has the ball
   LDA P_SHOT,X
-  STA T7                       ; sta gia' tirando? (palla alzata, non rubabile)
+  STA T7                       ; already shooting? (ball raised, cannot be stolen)
   TXA
   EOR #$01
-  TAX                          ; X = difensore
+  TAX                          ; X = defender
   LDA T7
   BNE .sa_end
   JSR DIST_OTHER
@@ -632,41 +635,41 @@ START_ACTION:
   LDA RND
   CMP #STEAL_PROB
   BCS .sa_end
-  STX HOLDER                   ; palla rubata
+  STX HOLDER                   ; ball stolen
   LDA #MSG_STEAL
   JSR SHOW_MSG
-  LDA #EVT_STEAL               ; suono + applauso
+  LDA #EVT_STEAL               ; sound + applause
   STA SFX_REQ
 .sa_end:
   RTS
 
 
 ; ---------------------------------------------------------------
-; zona di tiro del giocatore X: A = probabilita' (0-255), B_PTS = 2 o 3
-; usa T0-T3.  Il giocatore 0 attacca a destra, il giocatore 1 a sinistra.
-; L'arco e' un'ellisse (ARCDX_TAB[dy] = semiasse in X alla distanza dy
-; dal centro dell'arco); l'area e' dx < 54 e dy < 20.
+; shooting zone of player X: A = probability (0-255), B_PTS = 2 or 3
+; uses T0-T3.  Player 0 attacks to the right, player 1 to the left.
+; The arc is an ellipse (ARCDX_TAB[dy] = half axis in X at distance dy
+; from the centre of the arc); the paint is dx < 54 and dy < 20.
 ; ---------------------------------------------------------------
 CALC_ZONE:
   LDA P_X,X
   CLC
   ADC #8
-  STA T2                       ; X del centro dei piedi
+  STA T2                       ; X of the centre of the feet
   CPX #$00
   BNE .cz_left
-  LDA #251                     ; arco di destra: centro a 255-4
+  LDA #251                     ; right arc: centre at 255-4
   SEC
   SBC T2
   BRA .cz_dx
 .cz_left:
   LDA T2
   SEC
-  SBC #4                       ; arco di sinistra: centro a 4
+  SBC #4                       ; left arc: centre at 4
 .cz_dx:
-  STA T0                       ; distanza dal centro dell'arco in X
+  STA T0                       ; distance from the centre of the arc along X
   LDA P_FY,X
   SEC
-  SBC #127                     ; centro verticale dell'arco
+  SBC #127                     ; vertical centre of the arc
   BCS .cz_dy
   EOR #$FF
   CLC
@@ -690,7 +693,7 @@ CALC_ZONE:
   TAY
   LDA ARCDX_TAB,Y
   CMP T0
-  BCS .cz_two                  ; dentro l'ellisse
+  BCS .cz_two                  ; inside the ellipse
 .cz_three:
   LDA #$03
   STA B_PTS
@@ -703,7 +706,7 @@ CALC_ZONE:
   RTS
 
 
-; (T4 - T5) << T6  ->  T1:T0  (16 bit con segno; T6 = 3 o 4)
+; (T4 - T5) << T6  ->  T1:T0  (16 bit signed; T6 = 3 or 4)
 VEL_CALC:
   LDA T4
   SEC
@@ -722,13 +725,13 @@ VEL_CALC:
 
 
 ; ---------------------------------------------------------------
-; vertice del salto: la palla parte.  X = tiratore
+; top of the jump: the ball leaves.  X = shooter
 ; ---------------------------------------------------------------
 SHOT_RELEASE:
   LDA #$00
   STA P_SHOT,X
-  STA T6                       ; T6 = 1 se il tiro e' contrastato
-  JSR DIST_OTHER               ; T0/T1 = distanza dal difensore
+  STA T6                       ; T6 = 1 if the shot is contested
+  JSR DIST_OTHER               ; T0/T1 = distance from the defender
   LDA T0
   CMP #CONTEST_DX
   BCS .sr_free
@@ -737,7 +740,7 @@ SHOT_RELEASE:
   BCS .sr_free
   LDA #$01
   STA T6
-  TXA                          ; il difensore e' in salto al momento giusto?
+  TXA                          ; is the defender jumping at the right moment?
   EOR #$01
   TAX
   LDA P_JUMP,X
@@ -752,11 +755,11 @@ SHOT_RELEASE:
   BCS .sr_free
   JMP BLOCK_SHOT               ; STOPPATA
 .sr_free:
-  JSR CALC_ZONE                ; B_PTS e probabilita' base
+  JSR CALC_ZONE                ; B_PTS and base probability
   STA T7
   LDA T6
   BEQ .sr_roll
-  LDA T7                       ; contrastato: meno probabilita'
+  LDA T7                       ; contested: lower probability
   SEC
   SBC #CONTEST_PEN
   BCS .sr_pen
@@ -768,7 +771,7 @@ SHOT_RELEASE:
   LDA RND
   CMP T7
   LDA #$00
-  BCS .sr_set                  ; caso >= probabilita': sbaglia
+  BCS .sr_set                  ; random >= probability: miss
   LDA #$01
 .sr_set:
   STA B_MAKE
@@ -788,7 +791,7 @@ SHOT_RELEASE:
   STA T4
   LDA #$03
   STA T6
-  JSR VEL_CALC                 ; 32 frame di volo: velocita' = differenza * 8 (in 8.8)
+  JSR VEL_CALC                 ; 32 frames of flight: velocity = difference * 8 (in 8.8)
   LDA T0
   STA B_VXL
   LDA T1
@@ -808,7 +811,7 @@ SHOT_RELEASE:
   RTS
 
 
-; tiro stoppato: la palla torna indietro e diventa libera. X = tiratore
+; blocked shot: the ball goes back and becomes loose. X = shooter
 BLOCK_SHOT:
   STX SHOOTER
   LDA #$02
@@ -846,7 +849,7 @@ BLOCK_SHOT:
   STA T4
   LDA #$04
   STA T6
-  JSR VEL_CALC                 ; 16 frame: velocita' = differenza * 16
+  JSR VEL_CALC                 ; 16 frames: velocity = difference * 16
   LDA T0
   STA B_VXL
   LDA T1
@@ -858,14 +861,14 @@ BLOCK_SHOT:
   STA B_VYH
   LDA #30
   STA B_H
-  LDA #EVT_BLOCK               ; suono + applauso
+  LDA #EVT_BLOCK               ; sound + applause
   STA SFX_REQ
   LDA #MSG_BLOCK
   JMP SHOW_MSG
 
 
 ; ---------------------------------------------------------------
-; la palla: UPDATE_BALL in base a BSTATE
+; the ball: UPDATE_BALL by BSTATE
 ; ---------------------------------------------------------------
 UPDATE_BALL:
   LDA BSTATE
@@ -899,7 +902,7 @@ UPDATE_BALL:
   STA B_GYH
   LDA P_JUMP,X
   BEQ .ub_dribble
-  TAY                          ; in salto: la palla e' sopra la testa
+  TAY                          ; jumping: the ball is over the head
   LDA JUMP_H,Y
   CLC
   ADC #H_START
@@ -912,7 +915,7 @@ UPDATE_BALL:
   TAY
   LDA DRIB_TAB,Y
   STA B_H
-  CPY #8                       ; la palla tocca terra: tonfo sul chip di chi palleggia
+  CPY #8                       ; the ball touches the ground: thud on the chip of the dribbling player
   BNE .ub_dr_end
   LDA #$01
   STA SFX_DRIB,X
@@ -945,7 +948,7 @@ UPDATE_BALL:
   LDA #$00
   STA B_H
 .ub_pick:
-  LDA B_T                      ; la palla si raccoglie solo quando e' bassa
+  LDA B_T                      ; the ball can be picked up only when it is low
   CMP #9
   BCC .ub_pk_end
   LDX #$00
@@ -959,7 +962,7 @@ UPDATE_BALL:
   LDA T1
   CMP #9
   BCS .ub_pk_next
-  STX HOLDER                   ; palla raccolta
+  STX HOLDER                   ; ball picked up
   LDA #$00
   STA BSTATE
   RTS
@@ -970,14 +973,14 @@ UPDATE_BALL:
 .ub_pk_end:
   RTS
 
-.ub_net:                       ; la palla cade nella retina
+.ub_net:                       ; the ball falls into the net
   INC B_T
   LDY B_T
   LDA NET_TAB,Y
   STA B_H
   CPY #12
   BNE .ub_net_end
-  LDX SHOOTER                  ; fine azione: vittoria o nuovo possesso
+  LDX SHOOTER                  ; end of the action: victory or new possession
   LDA P_SCORE,X
   CMP #WIN_SCORE
   BCC .ub_next
@@ -986,11 +989,11 @@ UPDATE_BALL:
 .ub_next:
   TXA
   EOR #$01
-  JMP START_POSS               ; la palla passa all'avversario
+  JMP START_POSS               ; the ball goes to the opponent
 .ub_net_end:
   RTS
 
-; posizione a terra += velocita' (16 bit con segno, 8.8)
+; position on the ground += velocity (16 bit signed, 8.8)
 MOVE_BALL:
   LDA B_GXL
   CLC
@@ -1008,11 +1011,11 @@ MOVE_BALL:
   STA B_GYH
   RTS
 
-; il tiro e' arrivato al ferro
+; the shot has reached the rim
 SHOT_END:
   LDA B_MAKE
   BEQ .se_miss
-  LDX SHOOTER                  ; canestro!
+  LDX SHOOTER                  ; basket!
   LDA P_SCORE,X
   CLC
   ADC B_PTS
@@ -1028,15 +1031,15 @@ SHOT_END:
   LDA #MSG_3
 .se_m:
   JSR SHOW_MSG
-  LDA #EVT_SCORE               ; retina + chime + applauso
+  LDA #EVT_SCORE               ; net + chime + applause
   STA SFX_REQ
   LDA #$03
   STA BSTATE
   LDA #$00
   STA B_T
   RTS
-.se_miss:                      ; sbaglia: rimbalza sul ferro e la palla e' libera
-  LDA #EVT_MISS                ; il ferro
+.se_miss:                      ; miss: it bounces on the rim and the ball is loose
+  LDA #EVT_MISS                ; the rim
   STA SFX_REQ
   LDX SHOOTER
   LDA #$02
@@ -1051,7 +1054,7 @@ SHOT_END:
   STA T0
   CPX #$00
   BNE .se_l
-  LDA HOOPX                    ; canestro di destra: rimbalza verso il centro
+  LDA HOOPX                    ; right basket: bounces towards the centre
   SEC
   SBC T0
   BRA .se_x
@@ -1089,12 +1092,12 @@ SHOT_END:
 
 
 ; ===============================================================
-;  FINE PARTITA: il campo resta, appare il pannello del vincitore
+;  END OF THE GAME: the court stays, the winner panel appears
 ; ===============================================================
 GAME_OVER:
   LDX #$FF
   TXS
-  LDA #45                      ; il chime dell'ultimo canestro finisce di suonare
+  LDA #45                      ; the chime of the last basket finishes playing
   STA GO_DELAY
 .go_w:
   JSR WAIT_FRAME
@@ -1120,15 +1123,15 @@ GAME_OVER:
 .go_banner:
   STA PTR+1
   JSR DRAW_RECORDS
-  JSR DRAW_HUD                 ; punteggio finale
+  JSR DRAW_HUD                 ; final score
   JSR VDP_INT_ON
-  LDA #$01                     ; applauso, gridi, poi la canzone celebrativa
+  LDA #$01                     ; applause, cheers, then the celebration song
   STA SND_BUSY
   LDA #CMD_WIN
   STA SND_CMD
   LDA #$00
   STA ARMED
-  LDA #60                      ; dopo la canzone, mezzo secondo prima di accettare il pulsante
+  LDA #60                      ; after the song, half a second before accepting the button
   STA GO_DELAY
 .go_loop:
   JSR WAIT_FRAME
@@ -1137,9 +1140,9 @@ GAME_OVER:
   ORA P_JOY+1
   AND #BTN_MASK
   BNE .go_pressed
-  LDA ARMED                    ; pulsanti rilasciati
+  LDA ARMED                    ; buttons released
   BNE .go_loop
-  LDA SND_BUSY                 ; ... ma si arma solo a canzone finita
+  LDA SND_BUSY                 ; ... but it is armed only when the song is over
   BNE .go_loop
   LDA GO_DELAY
   BNE .go_dec
@@ -1163,7 +1166,7 @@ GAME_OVER:
 
 
 ; ---------------------------------------------------------------
-; aspetta che i pulsanti siano rilasciati e poi premuti
+; waits until the buttons are released and then pressed
 ; ---------------------------------------------------------------
 WAIT_FIRE:
 .wf_rel:
@@ -1184,14 +1187,14 @@ WAIT_FIRE:
 
 
 ; ---------------------------------------------------------------
-; NMI (vblank): unico punto che scrive la Sprite Attribute Table.
-; Il main loop scrive solo in SAT_BUFFER (RAM). Quando il main loop deve
-; scrivere sul VDP (schermate, punteggio) spegne l'interrupt del VDP
-; con VDP_INT_OFF, cosi' l'NMI non puo' spezzare una sequenza di scrittura.
+; NMI (vblank): the only point that writes the Sprite Attribute Table.
+; The main loop writes only into SAT_BUFFER (RAM). When the main loop must
+; write the VDP (screens, score) it switches the VDP interrupt off
+; with VDP_INT_OFF, so the NMI cannot break a write sequence.
 ; ---------------------------------------------------------------
 NMI_TASK:
-  INC FRAME_CNT           ; conta i frame per WAIT_FRAME
-  LDA VREG                ; leggi stato VDP (azzera F e C e il latch dei byte)
+  INC FRAME_CNT           ; counts the frames for WAIT_FRAME
+  LDA VREG                ; read the VDP status (clears F and C and the byte latch)
   LDA #<VDP_SPRITE_ATT_BASE
   STA VREG
   LDA #(VDP_WRITE_VRAM_BIT | >VDP_SPRITE_ATT_BASE)
@@ -1201,22 +1204,22 @@ NMI_TASK:
   LDA SAT_BUFFER,X
   STA VDATA
   INX
-  CPX #25               ; 6 sprite x 4 byte + Y=$D0 della 7a voce
+  CPX #25               ; 6 sprites x 4 bytes + Y=$D0 of the 7th entry
   BNE .copy_sat
-  JSR SND_TICK            ; musica ed effetti sonori (A,X,Y salvati dentro)
-  RTS                     ; NMI_HANDLER del BIOS rilegge VREG e fa RTI
+  JSR SND_TICK            ; music and sound effects (A,X,Y saved inside)
+  RTS                     ; the BIOS NMI_HANDLER rereads VREG and does RTI
 
 FRAME_CNT:     .byte $00
 LAST_FRAME:    .byte $00
 
-WAIT_FRAME:               ; aspetta il prossimo NMI (1 frame = 1/60 s)
+WAIT_FRAME:               ; waits for the next NMI (1 frame = 1/60 s)
   LDA FRAME_CNT
   CMP LAST_FRAME
   BEQ WAIT_FRAME
   STA LAST_FRAME
   RTS
 
-; spegne l'interrupt del VDP subito dopo un NMI (ne arriva un altro fra ~16 ms)
+; switches the VDP interrupt off just after an NMI (the next one comes in ~16 ms)
 VDP_INT_OFF:
   LDA FRAME_CNT
 .io_wait:
@@ -1235,15 +1238,15 @@ VDP_INT_ON:
   STA VREG
   RTS
 
-; SAT: priorita' decrescente: 0 palla, 1-2 giocatore piu' vicino, 3-4 giocatore piu' lontano, 5 ombra
-; (al massimo 4 sprite sulla stessa riga: palla + 2 giocatori + ombra)
-SAT_BUFFER:    .byte HIDE_Y,$00,0,$0A   ; 0: palla
-               .byte HIDE_Y,$00,$00,$04            ; 1: giocatore vicino, busto
-               .byte HIDE_Y,$00,$00,$0F            ; 2: giocatore vicino, gambe
-               .byte HIDE_Y,$00,$00,$04            ; 3: giocatore lontano, busto
-               .byte HIDE_Y,$00,$00,$0F            ; 4: giocatore lontano, gambe
-               .byte HIDE_Y,$00,4,$01 ; 5: ombra della palla
-               .byte $D0                           ; 6: Y=$D0 = fine lista
+; SAT: decreasing priority: 0 ball, 1-2 nearer player, 3-4 farther player, 5 shadow
+; (at most 4 sprites on the same line: ball + 2 players + shadow)
+SAT_BUFFER:    .byte HIDE_Y,$00,0,$0A   ; 0: ball
+               .byte HIDE_Y,$00,$00,$04            ; 1: nearer player, chest
+               .byte HIDE_Y,$00,$00,$0F            ; 2: nearer player, legs
+               .byte HIDE_Y,$00,$00,$04            ; 3: farther player, chest
+               .byte HIDE_Y,$00,$00,$0F            ; 4: farther player, legs
+               .byte HIDE_Y,$00,4,$01 ; 5: shadow of the ball
+               .byte $D0                           ; 6: Y=$D0 = end of the list
 
 HIDE_SPRITES:
   LDA #HIDE_Y
@@ -1257,10 +1260,10 @@ HIDE_SPRITES:
 
 
 ; ---------------------------------------------------------------
-; riempie SAT_BUFFER (solo RAM) dallo stato di gioco
+; fills SAT_BUFFER (RAM only) from the game state
 ; ---------------------------------------------------------------
 DRAW_ALL:
-  ; --- palla: centro = (GX, GY - H - 3), sprite 16x16 col centro del pallone in (7,7)
+  ; --- ball: centre = (GX, GY - H - 3), 16x16 sprite with the centre of the ball at (7,7)
   LDA B_GXH
   SEC
   SBC #7
@@ -1270,13 +1273,13 @@ DRAW_ALL:
   SBC B_H
   BCC .da_by0
   SEC
-  SBC #11                      ; 3 (raggio) + 7 (centro) + 1 (SAT)
+  SBC #11                      ; 3 (radius) + 7 (centre) + 1 (SAT)
   BCS .da_byok
 .da_by0:
   LDA #$00
 .da_byok:
   STA SAT_BUFFER
-  ; --- ombra a terra, centrata sul punto (GX, GY)
+  ; --- shadow on the ground, centred on the point (GX, GY)
   LDA B_GXH
   SEC
   SBC #8
@@ -1285,7 +1288,7 @@ DRAW_ALL:
   SEC
   SBC #9
   STA SAT_BUFFER+20
-  ; --- giocatori: chi e' piu' in basso sullo schermo e' piu' vicino, va davanti
+  ; --- players: the one lower on the screen is nearer, so it goes in front
   LDA P_FY
   CMP P_FY+1
   BCS .da_p0
@@ -1305,45 +1308,45 @@ DRAW_ALL:
   JSR DRAW_PLAYER
   RTS
 
-; X = giocatore, Y = offset in SAT_BUFFER dello sprite del busto (gambe a +4)
+; X = player, Y = offset in SAT_BUFFER of the chest sprite (legs at +4)
 DRAW_PLAYER:
   STY T6
   LDA P_JUMP,X
   TAY
-  LDA JUMP_H,Y                 ; quanto e' sollevato da terra
+  LDA JUMP_H,Y                 ; how high it is above the ground
   STA T0
   LDA P_FY,X
   SEC
   SBC T0
-  STA T1                       ; piedi sollevati
+  STA T1                       ; raised feet
   LDY T6
   SEC
-  SBC #33                      ; busto: piedi - 32 - 1 (SAT)
+  SBC #33                      ; chest: feet - 32 - 1 (SAT)
   STA SAT_BUFFER,Y
   LDA T1
   SEC
-  SBC #17                      ; gambe: piedi - 16 - 1
+  SBC #17                      ; legs: feet - 16 - 1
   STA SAT_BUFFER+4,Y
   LDA P_X,X
   STA SAT_BUFFER+1,Y
   STA SAT_BUFFER+5,Y
-  ; --- posa del busto
+  ; --- pose of the chest
   LDA P_JUMP,X
   BNE .dp_up
   LDA BSTATE
   BNE .dp_idle
   CPX HOLDER
   BEQ .dp_idle
-  LDA #SPR_TOP_DEF             ; difesa: braccia larghe
+  LDA #SPR_TOP_DEF             ; defence: arms wide
   BRA .dp_top
 .dp_idle:
   LDA #SPR_TOP_IDLE
   BRA .dp_top
 .dp_up:
-  LDA #SPR_TOP_SHOOT           ; braccia alzate
+  LDA #SPR_TOP_SHOOT           ; arms raised
 .dp_top:
   STA T2
-  ; --- posa delle gambe
+  ; --- pose of the legs
   LDA P_JUMP,X
   BNE .dp_legj
   LDA P_WALK,X
@@ -1379,13 +1382,13 @@ DRAW_PLAYER:
   STA SAT_BUFFER+7,Y
   RTS
 
-TOP_COLOR:     .byte $04,$08                ; maglia: Davide blu scuro, Elia rosso
-BOT_COLOR:     .byte $0F,$01                ; calzoncini: Davide bianco, Elia nero
-HOOPX:         .byte 233,22                 ; canestro attaccato da Davide (destra) / da Elia (sinistra)
+TOP_COLOR:     .byte $04,$08                ; shirt: Davide dark blue, Elia red
+BOT_COLOR:     .byte $0F,$01                ; shorts: Davide white, Elia black
+HOOPX:         .byte 233,22                 ; basket attacked by Davide (right) / by Elia (left)
 
 
 ; ---------------------------------------------------------------
-; punteggi (cifre grandi) a fianco dei nomi, messaggi
+; scores (big digits) beside the names, messages
 ; ---------------------------------------------------------------
 UPDATE_HUD:
   JSR VDP_INT_OFF
@@ -1395,14 +1398,14 @@ UPDATE_HUD:
 
 DRAW_HUD:
   LDX #$00
-  LDA #$08                      ; riga 0, colonna 8: a fianco di "DAVIDE"
+  LDA #$08                      ; row 0, column 8: beside "DAVIDE"
   JSR DRAW_SCORE
   LDX #$01
-  LDA #$14                      ; riga 0, colonna 20: a fianco di "ELIA"
+  LDA #$14                      ; row 0, column 20: beside "ELIA"
   JSR DRAW_SCORE
   RTS
 
-; X = giocatore, A = byte basso dell'indirizzo name table (riga 0)
+; X = player, A = low byte of the name table address (row 0)
 DRAW_SCORE:
   STA T4
   LDA P_SCORE,X
@@ -1414,8 +1417,8 @@ DRAW_SCORE:
   INY
   BRA .ds_t
 .ds_o:
-  STA T5                        ; unita'
-  STY T6                        ; decine
+  STA T5                        ; units
+  STY T6                        ; tens
   LDA T6
   ASL A
   ASL A
@@ -1440,8 +1443,8 @@ DRAW_SCORE:
   JSR DRAW_BIG
   RTS
 
-; disegna un carattere grande 2x2 tile
-; T0 = primo tile (alto-sx), T1/T2 = indirizzo VRAM di scrittura (lo/hi con bit $40)
+; draws a big 2x2 tile character
+; T0 = first tile (top-left), T1/T2 = VRAM write address (lo/hi with bit $40)
 DRAW_BIG:
   LDA T1
   STA VREG
@@ -1452,7 +1455,7 @@ DRAW_BIG:
   CLC
   ADC #1
   STA VDATA
-  LDA T1                        ; riga sotto = indirizzo + 32
+  LDA T1                        ; row below = address + 32
   CLC
   ADC #32
   STA VREG
@@ -1468,7 +1471,7 @@ DRAW_BIG:
   STA VDATA
   RTS
 
-; scrive il messaggio MSG_NEW (20 tile) sulla riga 2, colonne 6-25
+; writes the message MSG_NEW (20 tiles) on row 2, columns 6-25
 DRAW_MSG:
   LDA MSG_NEW
   ASL A
@@ -1501,9 +1504,9 @@ DRAW_MSG:
 
 
 ; ---------------------------------------------------------------
-; disegna i record di una schermata sulla name table:
-;   .byte riga, colonna, lunghezza, tile...   (terminatore: riga = $FF)
-; PTR = inizio dei record. VDP libero (VDP_INT_OFF).
+; draws the records of a screen on the name table:
+;   .byte row, column, length, tile...   (terminator: row = $FF)
+; PTR = start of the records. VDP free (VDP_INT_OFF).
 ; ---------------------------------------------------------------
 DRAW_RECORDS:
 .dr_next:
@@ -1511,13 +1514,13 @@ DRAW_RECORDS:
   LDA (PTR),Y
   CMP #$FF
   BEQ .dr_end
-  STA T0                        ; riga
+  STA T0                        ; row
   INY
   LDA (PTR),Y
-  STA T1                        ; colonna
+  STA T1                        ; column
   INY
   LDA (PTR),Y
-  STA T2                        ; lunghezza
+  STA T2                        ; length
   LDA T0
   AND #$07
   ASL A
@@ -1527,14 +1530,14 @@ DRAW_RECORDS:
   ASL A
   CLC
   ADC T1
-  STA VREG                      ; byte basso: (riga mod 8)*32 + colonna
+  STA VREG                      ; low byte: (row mod 8)*32 + column
   LDA T0
   LSR A
   LSR A
   LSR A
   CLC
   ADC #(VDP_WRITE_VRAM_BIT | >VDP_NAME_TABLE_BASE)
-  STA VREG                      ; byte alto: $78 + riga/8
+  STA VREG                      ; high byte: $78 + row/8
   INY
 .dr_copy:
   LDA (PTR),Y
@@ -1542,7 +1545,7 @@ DRAW_RECORDS:
   INY
   DEC T2
   BNE .dr_copy
-  TYA                           ; PTR += 3 + lunghezza
+  TYA                           ; PTR += 3 + length
   CLC
   ADC PTR
   STA PTR
@@ -1561,7 +1564,7 @@ CLEAR_NAME_TABLE:
   STA VREG
   LDA #(VDP_WRITE_VRAM_BIT | >VDP_NAME_TABLE_BASE)
   STA VREG
-  LDX #3                        ; 768 byte = 3 pagine da 256
+  LDX #3                        ; 768 bytes = 3 pages of 256
 .cn_page:
   LDY #0
 .cn_byte:
@@ -1573,7 +1576,7 @@ CLEAR_NAME_TABLE:
   BNE .cn_page
   RTS
 
-; copia il campo di gioco (VDP_NAME) nella name table
+; copies the court (VDP_NAME) into the name table
 LOAD_GAME_NAME_TABLE:
   LDA #<VDP_NAME_TABLE_BASE
   STA VREG
@@ -1598,8 +1601,8 @@ LOAD_GAME_NAME_TABLE:
   BNE .ln_loop
   RTS
 
-; copia nella VRAM tutti i blocchi di VDP_BLOCKS (src, lunghezza, indirizzo VRAM):
-; pattern dei 3 terzi, sprite, colori dei 3 terzi
+; copies all the blocks of VDP_BLOCKS into the VRAM (src, length, VRAM address):
+; patterns of the 3 thirds, sprites, colours of the 3 thirds
 VDP_LOAD_ALL:
   LDA #<VDP_BLOCKS
   STA PTR
@@ -1615,13 +1618,13 @@ VDP_LOAD_ALL:
   STA VDP_INIT_HI
   INY
   LDA (PTR),Y
-  STA T0                        ; lunghezza, byte basso
+  STA T0                        ; length, low byte
   INY
   LDA (PTR),Y
-  STA T1                        ; lunghezza, byte alto
+  STA T1                        ; length, high byte
   INY
   LDA (PTR),Y
-  STA VREG                      ; indirizzo VRAM
+  STA VREG                      ; VRAM address
   INY
   LDA (PTR),Y
   STA VREG
@@ -1641,7 +1644,7 @@ VDP_LOAD_ALL:
   LDA T0
   ORA T1
   BNE .vl_cp
-  LDA PTR                       ; prossimo blocco: PTR += 6
+  LDA PTR                       ; next block: PTR += 6
   CLC
   ADC #6
   STA PTR
@@ -1704,13 +1707,13 @@ FILL_:
 ITAB:
    .byte $02,$C6,$0E,$FF       ;INITIALIZE G2 MODE
    .byte $03,$76,$03,$0E       ;R0: G2 | R1: 16K, 16x16 sprite | R2: name $3800 | R3: color $2000
-                               ;R4: pattern $0000 | R5: SAT $3B00 | R6: sprite pattern $1800 | R7: sfondo grigio
+                               ;R4: pattern $0000 | R5: SAT $3B00 | R6: sprite pattern $1800 | R7: grey background
 
 
 ; ===============================================================
-;  TABELLE (generate)
+;  TABLES (generated)
 ; ===============================================================
-; blocchi da copiare nella VRAM: sorgente (2), lunghezza (2), indirizzo VRAM + bit di scrittura (2)
+; blocks to copy into the VRAM: source (2), length (2), VRAM address + write bit (2)
 VDP_BLOCKS:
   .byte <PAT0,>PAT0,<(PAT0_END-PAT0),>(PAT0_END-PAT0),$00,$40
   .byte <PAT1,>PAT1,<(PAT1_END-PAT1),>(PAT1_END-PAT1),$00,$48
@@ -1722,29 +1725,29 @@ VDP_BLOCKS:
 
 
 ; ===============================================================
-;  SONORO  -  due AY-3-8910 (sinistro = Davide, destro = Elia)
-;  Tutto il suono e' suonato da SND_TICK, chiamata dall'NMI a 60 Hz.
-;  Il main loop non scrive mai sugli AY: lascia solo comandi e flag
-;  (SND_CMD, SFX_REQ, SFX_DRIB), cosi' non ci sono conflitti.
-;  Gli AY si scrivono dagli shadow SH_L / SH_R (registri 0-10).
+;  SOUND  -  two AY-3-8910 (left = Davide, right = Elia)
+;  All the sound is played by SND_TICK, called by the NMI at 60 Hz.
+;  The main loop never writes the AYs: it only leaves commands and flags
+;  (SND_CMD, SFX_REQ, SFX_DRIB), so there are no conflicts.
+;  The AYs are written from the shadows SH_L / SH_R (registers 0-10).
 ;
 ;  In partita: canale A = chime / ping, B = rumore (retina, applauso),
-;  C = colpi bassi (palleggio, ferro, stoppata).
-;  Canzoni: 0 = titolo, 1 = vittoria (4 tracce: melodia, arpeggio, basso, batteria).
+;  C = low thumps (dribble, rim, block).
+;  Songs: 0 = title, 1 = victory (4 tracks: melody, arpeggio, bass, drums).
 ; ===============================================================
 
-; chiamata una volta da RESET (interrupt VDP ancora spento)
+; called once by RESET (VDP interrupt still off)
 SND_INIT:
   LDA #$A5
   STA SND_RND
   LDA #$00
   STA SND_CMD
   STA SND_PH
-  LDA #$FF                      ; mixer: tutto spento mentre si azzera
+  LDA #$FF                      ; mixer: everything off while clearing
   JMP SND_GAME_MODE
 
 
-SND_CLEAR_SH:                   ; tutti i registri shadow a 0
+SND_CLEAR_SH:                   ; all the shadow registers to 0
   LDX #10
   LDA #$00
 .cs_l:
@@ -1755,7 +1758,7 @@ SND_CLEAR_SH:                   ; tutti i registri shadow a 0
   RTS
 
 
-; modalita' gioco: silenzio, mixer = tono A + rumore B + tono C
+; game mode: silence, mixer = tone A + noise B + tone C
 SND_GAME_MODE:
   JSR SND_CLEAR_SH
   LDA #$2A
@@ -1774,7 +1777,7 @@ SND_GAME_MODE:
   JMP AY_FLUSH
 
 
-; scrive i registri 0-10 dei due shadow sui due AY
+; writes registers 0-10 of the two shadows to the two AYs
 AY_FLUSH:
   LDX #10
 .af_l:
@@ -1790,7 +1793,7 @@ AY_FLUSH:
 
 
 ; ---------------------------------------------------------------
-; chiamata dall'NMI: A,X,Y salvati qui
+; called by the NMI: A,X,Y saved here
 ; ---------------------------------------------------------------
 SND_TICK:
   PHA
@@ -1808,11 +1811,11 @@ SND_TICK:
 .st_t:
   CMP #CMD_TITLE
   BNE .st_w
-  LDA #$00                      ; canzone 0 = titolo
+  LDA #$00                      ; song 0 = title
   JSR SND_START
   BRA .st_run
 .st_w:
-  JSR CELEB_START               ; CMD_WIN: applauso, gridi, poi la canzone 1
+  JSR CELEB_START               ; CMD_WIN: applause, cheers, then song 1
 .st_run:
   LDA SND_MODE
   BEQ .st_sfx
@@ -1834,16 +1837,16 @@ SND_TICK:
 
 
 ; ---------------------------------------------------------------
-; avvia una canzone: A = 0 titolo, 1 vittoria
+; starts a song: A = 0 title, 1 victory
 ; ---------------------------------------------------------------
 SND_START:
   ASL A
   ASL A
-  STA SN0                       ; canzone * 4
+  STA SN0                       ; song * 4
   JSR SND_CLEAR_SH
-  LDA #$38                      ; sinistro: 3 toni
+  LDA #$38                      ; left: 3 tones
   STA SH_L+7
-  LDA #$2A                      ; destro: tono A, rumore B (batteria), tono C
+  LDA #$2A                      ; right: tone A, noise B (drums), tone C
   STA SH_R+7
   LDX #$03
 .ss_trk:
@@ -1856,7 +1859,7 @@ SND_START:
   LDA SONGP_HI,Y
   STA TR_PH,X
   LDA #$01
-  STA TR_CT,X                   ; il primo DEC porta a 0 -> legge subito la prima nota
+  STA TR_CT,X                   ; the first DEC brings it to 0 -> reads the first note at once
   STA TR_ACT,X
   LDA #$00
   STA TR_NOTE,X
@@ -1870,7 +1873,7 @@ SND_START:
   RTS
 
 ; ---------------------------------------------------------------
-; legge il prossimo evento della traccia X: .byte nota, durata (frame); $FF = fine
+; reads the next event of track X: .byte note, length (frames); $FF = end
 ; ---------------------------------------------------------------
 MUS_FETCH:
   LDA TR_PL,X
@@ -1881,7 +1884,7 @@ MUS_FETCH:
   LDA (SND_PTR),Y
   CMP #$FF
   BNE .mf_note
-  LDA #$00                      ; fine traccia
+  LDA #$00                      ; end of the track
   STA TR_ACT,X
   STA TR_NOTE,X
   STA TR_VOL,X
@@ -1901,7 +1904,7 @@ MUS_FETCH:
   LDA #$00
   STA TR_AGE,X
   LDA TR_NOTE,X
-  BEQ .mf_vol                   ; pausa: volume 0
+  BEQ .mf_vol                   ; rest: volume 0
   CPX #$03
   BEQ .mf_drum
   LDA V0_TAB,X
@@ -1914,10 +1917,10 @@ MUS_FETCH:
   RTS
 
 ; ---------------------------------------------------------------
-; un frame di musica: avanza le 4 tracce e riempie gli shadow
+; one frame of music: advances the 4 tracks and fills the shadows
 ; ---------------------------------------------------------------
 MUS_TICK:
-  LDX #$02                      ; tracce a tono: 0 melodia, 1 arpeggio, 2 basso
+  LDX #$02                      ; tone tracks: 0 melody, 1 arpeggio, 2 bass
 .mt_trk:
   LDA TR_ACT,X
   BEQ .mt_next
@@ -1938,7 +1941,7 @@ MUS_TICK:
 .mt_next:
   DEX
   BPL .mt_trk
-  LDX #$03                      ; traccia 3: batteria
+  LDX #$03                      ; track 3: drums
   LDA TR_ACT,X
   BEQ .mt_dr_end
   DEC TR_CT,X
@@ -1955,8 +1958,8 @@ MUS_TICK:
   BEQ .mt_dr_end
   DEC TR_VOL,X
 .mt_dr_end:
-  ; ---- melodia: su entrambi i chip, il destro scordato di 1 passo (effetto chorus);
-  ;      vibrato sulle note lunghe e non troppo acute
+  ; ---- melody: on both chips, the right one detuned by 1 step (chorus effect)
+  ;      vibrato on long notes that are not too high
   LDX TR_NOTE
   BEQ .mt_l_off
   LDA TP_LO,X
@@ -1989,7 +1992,7 @@ MUS_TICK:
 .mt_l_v:
   STA SH_L+8
   STA SH_R+8
-  ; ---- arpeggio: solo chip sinistro, canale B
+  ; ---- arpeggio: left chip only, channel B
   LDX TR_NOTE+1
   BEQ .mt_h_off
   LDA TP_LO,X
@@ -2002,7 +2005,7 @@ MUS_TICK:
   LDA #$00
 .mt_h_v:
   STA SH_L+9
-  ; ---- basso: entrambi i chip, canale C
+  ; ---- bass: both chips, channel C
   LDX TR_NOTE+2
   BEQ .mt_b_off
   LDA TP_LO,X
@@ -2018,27 +2021,27 @@ MUS_TICK:
 .mt_b_v:
   STA SH_L+10
   STA SH_R+10
-  ; ---- batteria: chip destro, rumore sul canale B
+  ; ---- drums: right chip, noise on channel B
   LDX TR_NOTE+3
   LDA DRUM_NP,X
   STA SH_R+6
   LDA TR_VOL+3
   STA SH_R+9
-  ; ---- canzone finita?
+  ; ---- song over?
   LDA TR_ACT
   ORA TR_ACT+1
   ORA TR_ACT+2
   ORA TR_ACT+3
   BNE .mt_end
-  JSR SND_GAME_MODE             ; silenzio, SND_BUSY = 0
+  JSR SND_GAME_MODE             ; silence, SND_BUSY = 0
 .mt_end:
   RTS
 
 
 ; ---------------------------------------------------------------
-; rumore da applauso su un chip: A = volume base, Y = chip * 16.
-; Il volume e' abbassato di 0-7 a caso ogni frame (crepitio dei battimani)
-; e il periodo del rumore cambia a caso (5-12). Preserva Y.
+; applause noise on a chip: A = base volume, Y = chip * 16.
+; The volume is lowered by 0-7 at random every frame (crackle of the clapping)
+; and the noise period changes at random (5-12). Keeps Y.
 ; ---------------------------------------------------------------
 APPL_NOISE:
   STA SN1
@@ -2068,18 +2071,18 @@ APPL_NOISE:
   RTS
 
 ; ---------------------------------------------------------------
-; effetti sonori di gioco (un frame). Chip 0 = Davide, chip 1 = Elia.
-;   canale A = chime / ping, B = rumore (retina, applauso), C = colpi bassi
-; Priorita' in ogni canale: effetto a tabella > applauso / palleggio.
+; game sound effects (one frame). Chip 0 = Davide, chip 1 = Elia.
+;   channel A = chime / ping, B = noise (net, applause), C = low thumps
+; Priority in every channel: table effect > applause / dribble.
 ; ---------------------------------------------------------------
 SFX_TICK:
-  LDA SND_RND                   ; LFSR per il crepitio
+  LDA SND_RND                   ; LFSR for the crackle
   ASL A
   BCC .sf_r
   EOR #$1D
 .sf_r:
   STA SND_RND
-  LDA SFX_REQ                   ; nuova richiesta di effetto?
+  LDA SFX_REQ                   ; new effect request?
   BEQ .sf_noreq
   STA SFX_EVT
   TAX
@@ -2088,14 +2091,14 @@ SFX_TICK:
   STA SFX_REQ
   LDA EVT_ADLY,X
   BEQ .sf_noreq
-  STA SFX_ADLY                  ; l'applauso parte dopo un po'
+  STA SFX_ADLY                  ; the applause starts after a while
 .sf_noreq:
   LDA SFX_ADLY
   BEQ .sf_chips
   DEC SFX_ADLY
   BNE .sf_chips
   LDA #$01
-  STA SFX_APPL                  ; parte l'applauso
+  STA SFX_APPL                  ; the applause starts
 .sf_chips:
   LDX #$01
 .sf_chip:
@@ -2105,16 +2108,16 @@ SFX_TICK:
   ASL A
   ASL A
   ASL A
-  TAY                           ; Y = chip * 16 = offset dello shadow (SH_R = SH_L + 16)
+  TAY                           ; Y = chip * 16 = offset of the shadow (SH_R = SH_L + 16)
   LDA #$00
   STA SH_L+8,Y
   STA SH_L+9,Y
   STA SH_L+10,Y
-  ; ---- palleggio: tonfo sul canale C del chip del giocatore che palleggia
+  ; ---- dribble: thud on channel C of the chip of the dribbling player
   LDA SFX_DRIB,X
   BEQ .sf_nodr
   TAX
-  DEX                           ; passo 0..5
+  DEX                           ; step 0..5
   LDA DRIB_V,X
   STA SH_L+10,Y
   LDA DRIB_TL,X
@@ -2122,31 +2125,31 @@ SFX_TICK:
   LDA DRIB_TH,X
   STA SH_L+5,Y
 .sf_nodr:
-  ; ---- applauso: rumore sul canale B di entrambi i chip
+  ; ---- applause: noise on channel B of both chips
   LDA SFX_APPL
   BEQ .sf_noap
   LSR A
   LSR A
-  LSR A                         ; un valore dell'inviluppo ogni 8 frame
+  LSR A                         ; one value of the envelope every 8 frames
   TAX
   LDA APPL_ENV,X
   JSR APPL_NOISE
 .sf_noap:
-  ; ---- effetto a tabella: sopra a tutto il resto
+  ; ---- table effect: over everything else
   LDA SFX_EVT
   BEQ .sf_next
   TAX
   LDA EVT_OFF,X
   CLC
   ADC SFX_STEP
-  TAX                           ; X = posizione nelle tabelle EV*
+  TAX                           ; X = position in the EV* tables
   LDA EVA_V,X
   STA SH_L+8,Y
   LDA EVA_TL,X
   CPY #$00
   BEQ .sf_ea
   CLC
-  ADC #$01                      ; il chip destro e' scordato di 1 passo (chorus)
+  ADC #$01                      ; the right chip is detuned by 1 step (chorus)
 .sf_ea:
   STA SH_L,Y
   LDA EVA_TH,X
@@ -2170,7 +2173,7 @@ SFX_TICK:
   BMI .sf_adv
   JMP .sf_chip
 .sf_adv:
-  LDA SFX_EVT                   ; avanza l'effetto
+  LDA SFX_EVT                   ; advances the effect
   BEQ .sf_a1
   INC SFX_STEP
   LDX SFX_EVT
@@ -2180,7 +2183,7 @@ SFX_TICK:
   LDA #$00
   STA SFX_EVT
 .sf_a1:
-  LDA SFX_APPL                  ; avanza l'applauso
+  LDA SFX_APPL                  ; advances the applause
   BEQ .sf_a2
   INC SFX_APPL
   LDA SFX_APPL
@@ -2189,7 +2192,7 @@ SFX_TICK:
   LDA #$00
   STA SFX_APPL
 .sf_a2:
-  LDX #$01                      ; avanza i due palleggi
+  LDX #$01                      ; advances the two dribbles
 .sf_a3:
   LDA SFX_DRIB,X
   BEQ .sf_a4
@@ -2206,10 +2209,10 @@ SFX_TICK:
 
 
 ; ---------------------------------------------------------------
-; finale: prima l'applauso, poi i gridi, poi la canzone di vittoria
+; ending: first the applause, then the cheers, then the victory song
 ; ---------------------------------------------------------------
 CELEB_START:
-  JSR SND_GAME_MODE             ; silenzio, mixer = tono A + rumore B + tono C
+  JSR SND_GAME_MODE             ; silence, mixer = tone A + noise B + tone C
   LDA #$02
   STA SND_MODE
   LDA #$01
@@ -2221,14 +2224,14 @@ CELEB_START:
 
 CELEB_TICK:
   INC SND_T2
-  LDA #$00                      ; toni a zero: restano solo quelli della fase
+  LDA #$00                      ; tones at zero: only those of the phase remain
   STA SH_L+8
   STA SH_L+10
   STA SH_R+8
   STA SH_R+10
   LDA SND_STAGE
   BNE .cb_cheer
-  LDA SND_T2                    ; ---- fase 0: grande applauso
+  LDA SND_T2                    ; ---- phase 0: big applause
   CMP #CELEB_APPL_LEN
   BCC .cb_ap
   LDA #$01
@@ -2240,19 +2243,19 @@ CELEB_TICK:
   LSR A
   LSR A
   LSR A
-  LSR A                         ; un valore dell'inviluppo ogni 16 frame
+  LSR A                         ; one value of the envelope every 16 frames
   TAX
   LDA CAPPL_ENV,X
   JMP CELEB_NOISE
 .cb_cheer:
-  LDA SND_T2                    ; ---- fase 1: gridi "whoo!" + brusio della folla
+  LDA SND_T2                    ; ---- phase 1: "whoo!" cheers + murmur of the crowd
   CMP #CHEER_LEN
   BCC .cb_ch
-  LDA #$01                      ; finito: parte la canzone di vittoria
+  LDA #$01                      ; done: the victory song starts
   JMP SND_START
 .cb_ch:
   LSR A
-  TAX                           ; passo 0..55 (uno ogni 2 frame)
+  TAX                           ; step 0..55 (one every 2 frames)
   LDA CHEER_V,X
   STA SH_L+8
   STA SH_R+8
@@ -2266,7 +2269,7 @@ CELEB_TICK:
   LDA CHEER_TL,X
   STA SH_L
   CLC
-  ADC #$03                      ; chip destro scordato: effetto folla
+  ADC #$03                      ; right chip detuned: crowd effect
   STA SH_R
   LDA CHEER_TH,X
   STA SH_L+1
@@ -2280,7 +2283,7 @@ CELEB_TICK:
   STA SH_L+5
   STA SH_R+5
   LDA #$06
-CELEB_NOISE:                    ; A = volume base del rumore, su entrambi i chip
+CELEB_NOISE:                    ; A = base volume of the noise, on both chips
   STA SND_T1
   LDY #$00
   JSR APPL_NOISE
@@ -2290,14 +2293,14 @@ CELEB_NOISE:                    ; A = volume base del rumore, su entrambi i chip
   RTS
 
 
-; arco da 3 punti: semiasse X dell'ellisse per |dy| = 0..62 (dentro = 2 punti)
+; 3-point arc: half X axis of the ellipse for |dy| = 0..62 (inside = 2 points)
 ARCDX_TAB:
   .byte $54,$53,$53,$53,$53,$53,$53,$53,$53,$53,$52,$52,$52,$52,$51,$51
   .byte $51,$50,$50,$4F,$4F,$4F,$4E,$4E,$4D,$4C,$4C,$4B,$4A,$4A,$49,$48
   .byte $47,$47,$46,$45,$44,$43,$42,$41,$40,$3F,$3D,$3C,$3B,$39,$38,$36
   .byte $35,$33,$31,$2F,$2D,$2B,$29,$26,$24,$21,$1D,$19,$15,$0F,$00
 
-; limite sinistro del campo (X sprite) per Y piedi = 64..188; il limite destro e' 240 - valore
+; left edge of the court (sprite X) for feet Y = 64..188; the right edge is 240 - value
 XMIN_TAB:
   .byte $15,$15,$14,$14,$14,$14,$14,$14,$14,$13,$13,$13,$13,$13,$13,$12
   .byte $12,$12,$12,$12,$12,$11,$11,$11,$11,$11,$11,$11,$10,$10,$10,$10
@@ -2308,30 +2311,30 @@ XMIN_TAB:
   .byte $06,$06,$06,$05,$05,$05,$05,$05,$05,$04,$04,$04,$04,$04,$04,$04
   .byte $04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04
 
-; altezza del salto (pixel) in funzione dei frame rimasti P_JUMP = 0..24
+; height of the jump (pixels) by the frames left P_JUMP = 0..24
 JUMP_H:
   .byte $00,$01,$03,$05,$07,$09,$0A,$0B,$0C,$0D,$0D,$0E,$0E
   .byte $0E,$0E,$0D,$0D,$0C,$0B,$0A,$09,$07,$05,$03,$01
 
-; altezza della palla durante il palleggio (16 frame)
+; height of the ball while dribbling (16 frames)
 DRIB_TAB:
   .byte $12,$12,$11,$0F,$0E,$0B,$08,$04,$00,$04,$08,$0B,$0E,$0F,$11,$12
 
-; altezza della palla nel tiro: 33 passi, da 36 (mani) a 30 (ferro) con arco di 20 pixel
+; height of the ball in the shot: 33 steps, from 36 (hands) to 30 (rim) with an arc of 20 pixels
 HT_TAB:
   .byte $24,$26,$28,$2A,$2C,$2E,$2F,$30,$32,$32,$33
   .byte $34,$34,$35,$35,$35,$35,$35,$34,$34,$33,$32
   .byte $31,$30,$2E,$2D,$2B,$29,$28,$25,$23,$21,$1E
 
-; rimbalzo della palla libera: cade dal ferro e fa un secondo rimbalzo (17 passi)
+; bounce of the loose ball: it falls from the rim and bounces a second time (17 steps)
 BNC_TAB:
   .byte $1E,$1E,$1C,$1A,$16,$12,$0D,$07,$00,$03,$05,$07,$07,$07,$05,$03,$00
 
-; palla che attraversa la retina (13 passi)
+; ball going through the net (13 steps)
 NET_TAB:
   .byte $1E,$1C,$19,$16,$14,$12,$0F,$0C,$0A,$08,$05,$02,$00
 
-; sprite 16x16 (generatore sprite): palla, ombra, 3 pose del busto e 3 delle gambe, destra e sinistra
+; 16x16 sprites (sprite generator): ball, shadow, 3 poses of the chest and 3 of the legs, right and left
 VDP_SPRITE:
   ; BALL  (sprite name 0)
   .byte $00,$00,$00,$00,$03,$07,$0F,$0F
@@ -2405,7 +2408,7 @@ VDP_SPRITE:
   .byte $30,$18,$30,$30,$30,$60,$00,$00
 VDP_END_SPRITE:
 
-; pattern terzo 0: tile 00-F3 (8 byte per tile)
+; patterns third 0: tiles 00-F3 (8 bytes per tile)
 PAT0:
   .byte $00,$00,$00,$00,$00,$00,$00,$00   ; tile 00
   .byte $00,$00,$00,$00,$00,$00,$00,$00
@@ -2653,7 +2656,7 @@ PAT0:
   .byte $00,$00,$00,$00,$00,$00,$00,$00
 PAT0_END:
 
-; colori terzo 0: tile 00-F3 (8 byte per tile)
+; colours third 0: tiles 00-F3 (8 bytes per tile)
 COL0:
   .byte $11,$11,$11,$11,$11,$11,$11,$11   ; tile 00
   .byte $1E,$1E,$1E,$1E,$1E,$1E,$1E,$1E
@@ -2901,7 +2904,7 @@ COL0:
   .byte $B1,$B1,$B1,$B1,$B1,$B1,$B1,$B1
 COL0_END:
 
-; pattern terzo 1: tile 00-90 (8 byte per tile)
+; patterns third 1: tiles 00-90 (8 bytes per tile)
 PAT1:
   .byte $00,$00,$00,$00,$00,$00,$00,$00   ; tile 00
   .byte $00,$00,$00,$00,$00,$00,$00,$00
@@ -3050,7 +3053,7 @@ PAT1:
   .byte $C0,$C0,$C0,$C0,$60,$60,$60,$60   ; tile 90
 PAT1_END:
 
-; colori terzo 1: tile 00-90 (8 byte per tile)
+; colours third 1: tiles 00-90 (8 bytes per tile)
 COL1:
   .byte $11,$11,$11,$11,$11,$11,$11,$11   ; tile 00
   .byte $1E,$1E,$1E,$1E,$1E,$1E,$1E,$1E
@@ -3199,7 +3202,7 @@ COL1:
   .byte $1E,$1E,$1E,$1E,$1E,$1E,$1E,$1E   ; tile 90
 COL1_END:
 
-; pattern terzo 2: tile 00-8A (8 byte per tile)
+; patterns third 2: tiles 00-8A (8 bytes per tile)
 PAT2:
   .byte $00,$00,$00,$00,$00,$00,$00,$00   ; tile 00
   .byte $00,$00,$00,$00,$00,$00,$00,$00
@@ -3342,7 +3345,7 @@ PAT2:
   .byte $30,$30,$30,$30,$18,$D8,$D8,$18
 PAT2_END:
 
-; colori terzo 2: tile 00-8A (8 byte per tile)
+; colours third 2: tiles 00-8A (8 bytes per tile)
 COL2:
   .byte $11,$11,$11,$11,$11,$11,$11,$11   ; tile 00
   .byte $1E,$1E,$1E,$1E,$1E,$1E,$1E,$1E
@@ -3485,63 +3488,63 @@ COL2:
   .byte $1E,$1E,$1E,$1E,$1E,$1E,$1E,$1E
 COL2_END:
 
-; name table 32x24: riga 0-1 punteggi (cifre grandi scritte da DRAW_HUD), riga 1 nomi, riga 2 messaggi, resto campo
+; name table 32x24: rows 0-1 scores (big digits written by DRAW_HUD), row 1 names, row 2 messages, the rest the court
 VDP_NAME:
   .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00   ; riga 0
+  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00   ; row 0
   .byte $00,$44,$41,$56,$49,$44,$45,$00,$00,$00,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$45,$4C,$49,$41,$00,$00,$00   ; riga 1
+  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$45,$4C,$49,$41,$00,$00,$00   ; row 1
   .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00   ; riga 2
+  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00   ; row 2
   .byte $01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01
-  .byte $01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01   ; riga 3
+  .byte $01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01   ; row 3
   .byte $01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01
-  .byte $01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01   ; riga 4
+  .byte $01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01   ; row 4
   .byte $01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01
-  .byte $01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01   ; riga 5
+  .byte $01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01   ; row 5
   .byte $01,$02,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01
-  .byte $01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$03,$01   ; riga 6
+  .byte $01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$03,$01   ; row 6
   .byte $01,$02,$04,$05,$06,$06,$06,$06,$06,$06,$06,$06,$06,$06,$06,$07
-  .byte $08,$06,$06,$06,$06,$06,$06,$06,$06,$06,$06,$06,$09,$0A,$03,$01   ; riga 7
+  .byte $08,$06,$06,$06,$06,$06,$06,$06,$06,$06,$06,$06,$09,$0A,$03,$01   ; row 7
   .byte $01,$02,$03,$04,$05,$06,$01,$01,$01,$01,$01,$01,$01,$01,$01,$07
-  .byte $08,$01,$01,$01,$01,$01,$01,$01,$01,$01,$09,$0A,$0B,$0C,$0D,$01   ; riga 8
+  .byte $08,$01,$01,$01,$01,$01,$01,$01,$01,$01,$09,$0A,$0B,$0C,$0D,$01   ; row 8
   .byte $01,$02,$0E,$0F,$10,$11,$12,$13,$01,$01,$01,$01,$01,$01,$01,$07
-  .byte $08,$01,$01,$01,$01,$01,$01,$01,$14,$15,$16,$17,$18,$19,$0D,$01   ; riga 9
+  .byte $08,$01,$01,$01,$01,$01,$01,$01,$14,$15,$16,$17,$18,$19,$0D,$01   ; row 9
   .byte $01,$1A,$1B,$01,$01,$01,$01,$1C,$1D,$01,$01,$01,$01,$01,$01,$07
-  .byte $08,$01,$01,$01,$01,$01,$01,$1E,$1F,$01,$01,$01,$01,$60,$61,$01   ; riga 10
+  .byte $08,$01,$01,$01,$01,$01,$01,$1E,$1F,$01,$01,$01,$01,$60,$61,$01   ; row 10
   .byte $01,$01,$62,$01,$01,$01,$01,$01,$63,$64,$01,$01,$01,$01,$01,$07
-  .byte $08,$01,$01,$01,$01,$01,$65,$66,$01,$01,$01,$01,$01,$67,$01,$01   ; riga 11
+  .byte $08,$01,$01,$01,$01,$01,$65,$66,$01,$01,$01,$01,$01,$67,$01,$01   ; row 11
   .byte $01,$01,$68,$01,$01,$01,$01,$01,$01,$69,$6A,$01,$01,$01,$01,$07
-  .byte $08,$01,$01,$01,$01,$6B,$6C,$01,$01,$01,$01,$01,$01,$6D,$01,$01   ; riga 12
+  .byte $08,$01,$01,$01,$01,$6B,$6C,$01,$01,$01,$01,$01,$01,$6D,$01,$01   ; row 12
   .byte $01,$6E,$6F,$70,$70,$70,$70,$71,$01,$01,$72,$01,$01,$73,$74,$75
-  .byte $76,$77,$78,$79,$01,$7A,$01,$01,$7B,$70,$70,$70,$70,$7C,$7D,$01   ; riga 13
+  .byte $76,$77,$78,$79,$01,$7A,$01,$01,$7B,$70,$70,$70,$70,$7C,$7D,$01   ; row 13
   .byte $01,$7E,$7F,$01,$01,$01,$01,$80,$01,$01,$81,$82,$83,$84,$01,$07
-  .byte $08,$01,$10,$85,$86,$87,$01,$01,$88,$01,$01,$01,$01,$89,$8A,$01   ; riga 14
+  .byte $08,$01,$10,$85,$86,$87,$01,$01,$88,$01,$01,$01,$01,$89,$8A,$01   ; row 14
   .byte $01,$8B,$01,$01,$01,$01,$01,$80,$01,$01,$8C,$80,$8D,$06,$01,$07
-  .byte $08,$01,$6E,$8E,$88,$8F,$01,$01,$88,$01,$01,$01,$01,$01,$90,$01   ; riga 15
+  .byte $08,$01,$6E,$8E,$88,$8F,$01,$01,$88,$01,$01,$01,$01,$01,$90,$01   ; row 15
   .byte $01,$02,$01,$01,$01,$01,$01,$03,$01,$01,$04,$05,$01,$06,$07,$08
-  .byte $09,$0A,$0B,$0C,$0D,$0E,$01,$01,$0F,$01,$01,$01,$01,$01,$10,$01   ; riga 16
+  .byte $09,$0A,$0B,$0C,$0D,$0E,$01,$01,$0F,$01,$01,$01,$01,$01,$10,$01   ; row 16
   .byte $01,$11,$01,$01,$01,$01,$01,$03,$01,$01,$12,$13,$01,$01,$01,$14
-  .byte $15,$01,$01,$01,$16,$17,$01,$01,$0F,$01,$01,$01,$01,$01,$18,$01   ; riga 17
+  .byte $15,$01,$01,$01,$16,$17,$01,$01,$0F,$01,$01,$01,$01,$01,$18,$01   ; row 17
   .byte $01,$19,$1A,$1A,$1A,$1A,$1A,$1B,$01,$01,$1C,$01,$01,$01,$01,$14
-  .byte $15,$01,$01,$01,$01,$1D,$01,$01,$1E,$1A,$1A,$1A,$1A,$1A,$1F,$01   ; riga 18
+  .byte $15,$01,$01,$01,$01,$1D,$01,$01,$1E,$1A,$1A,$1A,$1A,$1A,$1F,$01   ; row 18
   .byte $01,$60,$01,$01,$01,$01,$01,$01,$01,$61,$62,$01,$01,$01,$01,$14
-  .byte $15,$01,$01,$01,$01,$63,$64,$01,$01,$01,$01,$01,$01,$01,$65,$01   ; riga 19
+  .byte $15,$01,$01,$01,$01,$63,$64,$01,$01,$01,$01,$01,$01,$01,$65,$01   ; row 19
   .byte $66,$67,$01,$01,$01,$01,$01,$01,$68,$69,$01,$01,$01,$01,$01,$14
-  .byte $15,$01,$01,$01,$01,$01,$6A,$6B,$01,$01,$01,$01,$01,$01,$6C,$6D   ; riga 20
+  .byte $15,$01,$01,$01,$01,$01,$6A,$6B,$01,$01,$01,$01,$01,$01,$6C,$6D   ; row 20
   .byte $6E,$0C,$01,$01,$01,$01,$01,$6F,$70,$01,$01,$01,$01,$01,$01,$14
-  .byte $15,$01,$01,$01,$01,$01,$01,$71,$72,$01,$01,$01,$01,$01,$73,$74   ; riga 21
+  .byte $15,$01,$01,$01,$01,$01,$01,$71,$72,$01,$01,$01,$01,$01,$73,$74   ; row 21
   .byte $75,$01,$01,$01,$76,$77,$78,$79,$01,$01,$01,$01,$01,$01,$01,$14
-  .byte $15,$01,$01,$01,$01,$01,$01,$01,$7A,$7B,$7C,$7D,$01,$01,$01,$7E   ; riga 22
+  .byte $15,$01,$01,$01,$01,$01,$01,$01,$7A,$7B,$7C,$7D,$01,$01,$01,$7E   ; row 22
   .byte $7F,$80,$81,$82,$83,$84,$01,$01,$01,$01,$01,$01,$01,$01,$01,$14
-  .byte $15,$01,$01,$01,$01,$01,$01,$01,$01,$01,$85,$86,$87,$88,$89,$8A   ; riga 23
+  .byte $15,$01,$01,$01,$01,$01,$01,$01,$01,$01,$85,$86,$87,$88,$89,$8A   ; row 23
 VDP_END_NAME:
 
 TITLE_REC:
-  .byte 0, 0, 32, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01   ; bordo grigio
-  .byte 1, 0, 32, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01   ; bordo grigio
-  .byte 22, 0, 32, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01   ; bordo grigio
-  .byte 23, 0, 32, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01   ; bordo grigio
+  .byte 0, 0, 32, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01   ; grey border
+  .byte 1, 0, 32, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01   ; grey border
+  .byte 22, 0, 32, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01   ; grey border
+  .byte 23, 0, 32, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01, $01   ; grey border
   .byte 3, 10, 12, $D0, $D1, $AC, $AD, $F0, $F1, $C0, $C1, $D0, $D1, $B8, $B9   ; DAVIDE
   .byte 4, 10, 12, $D2, $D3, $AE, $AF, $F2, $F3, $C2, $C3, $D2, $D3, $BA, $BB   ; DAVIDE
   .byte 6, 9, 14, $F0, $F1, $E8, $E9, $00, $00, $B8, $B9, $C4, $C5, $C0, $C1, $AC, $AD   ; VS ELIA
@@ -3557,15 +3560,15 @@ TITLE_PRESS:
   .byte $FF
 
 END_REC:
-  .byte 3, 8, 16, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00   ; pannello nero
-  .byte 4, 8, 16, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00   ; pannello nero
-  .byte 5, 8, 16, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00   ; pannello nero
-  .byte 6, 8, 16, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00   ; pannello nero
-  .byte 7, 8, 16, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00   ; pannello nero
-  .byte 8, 8, 16, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00   ; pannello nero
-  .byte 9, 8, 16, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00   ; pannello nero
-  .byte 10, 8, 16, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00   ; pannello nero
-  .byte 2, 6, 20, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00   ; cancella il messaggio
+  .byte 3, 8, 16, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00   ; black panel
+  .byte 4, 8, 16, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00   ; black panel
+  .byte 5, 8, 16, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00   ; black panel
+  .byte 6, 8, 16, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00   ; black panel
+  .byte 7, 8, 16, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00   ; black panel
+  .byte 8, 8, 16, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00   ; black panel
+  .byte 9, 8, 16, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00   ; black panel
+  .byte 10, 8, 16, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00   ; black panel
+  .byte 2, 6, 20, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00   ; erases the message
   .byte $FF
 
 END_PRESS:
@@ -3586,9 +3589,9 @@ BANNER_E:
   .byte 7, 11, 10, $DA, $DB, $C2, $C3, $B2, $B3, $EA, $EB, $EE, $EF   ; WINS!
   .byte $FF
 
-; messaggi sulla riga 2 (20 caratteri, centrati); indice = MSG_* nel codice
+; messages on row 2 (20 characters, centred); index = MSG_* in the code
 MSG_TAB:
-  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00   ; 0: (vuoto)
+  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00, $00, $00, $00, $00, $00, $00, $00, $00, $00, $00   ; 0: (empty)
   .byte $00,$00,$00,$42,$41,$4C,$4C,$00,$54,$4F, $00, $44, $41, $56, $49, $44, $45, $00, $00, $00   ; 1: BALL TO DAVIDE
   .byte $00,$00,$00,$00,$42,$41,$4C,$4C,$00,$54, $4F, $00, $45, $4C, $49, $41, $00, $00, $00, $00   ; 2: BALL TO ELIA
   .byte $00,$00,$32,$2D,$50,$4F,$49,$4E,$54,$00, $42, $41, $53, $4B, $45, $54, $21, $00, $00, $00   ; 3: 2-POINT BASKET!
@@ -3596,17 +3599,17 @@ MSG_TAB:
   .byte $00,$00,$00,$00,$00,$00,$00,$42,$4C,$4F, $43, $4B, $21, $00, $00, $00, $00, $00, $00, $00   ; 5: BLOCK!
   .byte $00,$00,$00,$00,$42,$41,$4C,$4C,$00,$53, $54, $4F, $4C, $45, $4E, $21, $00, $00, $00, $00   ; 6: BALL STOLEN!
 
-; ---- tabelle del sonoro ----
-V0_TAB:        .byte 13, 9, 12, 0      ; volume all'attacco della nota
-FLOOR_TAB:     .byte 9, 4, 8, 0        ; volume minimo raggiunto dal decadimento
-DECMASK_TAB:   .byte 7, 3, 3, 0        ; il volume cala di 1 quando (eta' AND maschera) = 0
-VIB_TAB:       .byte 0, 1, 1, 0, 0, $FF, $FF, 0   ; vibrato +-1 passo (signed)
-; batteria: 1 cassa, 2 rullante, 3 charleston, 4 piatto
+; ---- sound tables ----
+V0_TAB:        .byte 13, 9, 12, 0      ; volume at the attack of the note
+FLOOR_TAB:     .byte 9, 4, 8, 0        ; lowest volume reached by the decay
+DECMASK_TAB:   .byte 7, 3, 3, 0        ; the volume drops by 1 when (age AND mask) = 0
+VIB_TAB:       .byte 0, 1, 1, 0, 0, $FF, $FF, 0   ; vibrato +-1 step (signed)
+; drums: 1 kick, 2 snare, 3 hi-hat, 4 cymbal
 DRUM_NP:       .byte 0, 28, 10, 2, 5
 DRUM_V0:       .byte 0, 15, 14, 8, 15
 DRUM_MASK:     .byte 0, 0, 0, 0, 7
 
-; periodi AY (1 MHz): TP = 62500 / f.  indice = nota MIDI - 35  (1 = C2 ... 55 = F#6), 0 = pausa
+; AY periods (1 MHz): TP = 62500 / f.  index = MIDI note - 35  (1 = C2 ... 55 = F#6), 0 = rest
 TP_LO:
   .byte $00,$BC,$86,$53,$24,$F6,$CC,$A4
   .byte $7E,$5A,$38,$18,$FA,$DE,$C3,$AA
@@ -3627,7 +3630,7 @@ TP_HI:
 SONGP_LO:      .byte <TITLE_LEAD,<TITLE_HARM,<TITLE_BASS,<TITLE_DRUM,<WIN_LEAD,<WIN_HARM,<WIN_BASS,<WIN_DRUM
 SONGP_HI:      .byte >TITLE_LEAD,>TITLE_HARM,>TITLE_BASS,>TITLE_DRUM,>WIN_LEAD,>WIN_HARM,>WIN_BASS,>WIN_DRUM
 
-; canzoni originali: .byte nota, durata (frame); $FF = fine traccia (nota = MIDI - 35, 0 = pausa)
+; original songs: .byte note, length (frames); $FF = end of the track (note = MIDI - 35, 0 = rest)
 TITLE_LEAD:
   .byte $29,$0F,$2C,$0F,$31,$1E,$2C,$0F,$29,$0F,$2C,$1E,$27,$0F,$2C,$0F
   .byte $30,$1E,$2C,$0F,$27,$0F,$2C,$1E,$29,$0F,$2E,$0F,$31,$1E,$2E,$0F
@@ -3703,7 +3706,7 @@ WIN_DRUM:
   .byte $04,$60
   .byte $FF
 
-; gridi: tre "whoo!" che salgono di tono (112 frame, un passo ogni 2 frame)
+; cheers: three "whoo!" going up in pitch (112 frames, one step every 2 frames)
 CHEER_V:
   .byte $04,$0D,$0D,$0D,$0D,$0D,$0D,$0D,$0D,$0D,$0D,$0D,$0D,$0D
   .byte $0D,$09,$04,$00,$00,$00,$04,$0D,$0D,$0D,$0D,$0D,$0D,$0D
@@ -3730,13 +3733,13 @@ CHEER_CTH:
   .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
   .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 
-; effetti: inizio di ogni effetto nelle tabelle EV* (1 = SCORE, 2 = MISS, 3 = BLOCK, 4 = STEAL)
+; effects: start of every effect in the EV* tables (1 = SCORE, 2 = MISS, 3 = BLOCK, 4 = STEAL)
 EVT_OFF:
   .byte $00,$00,$2C,$48,$58
-; durata (frame)
+; length (frames)
 EVT_LEN:
   .byte $00,$2C,$1C,$10,$16
-; ritardo dell'applauso dopo l'effetto (0 = nessun applauso)
+; delay of the applause after the effect (0 = no applause)
 EVT_ADLY:
   .byte $00,$1A,$00,$08,$0C
 ; canale A: volume / periodo
@@ -3781,7 +3784,7 @@ EVN_P:
   .byte $00,$00,$00,$00,$00,$00,$00,$00,$04,$04,$05,$05,$05,$06,$06,$06
   .byte $07,$07,$00,$00,$00,$00,$00,$00,$03,$04,$05,$06,$07,$08,$09,$0A
   .byte $0B,$0C,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-; canale C (colpo basso): volume / periodo
+; channel C (low thump): volume / period
 EVC_V:
   .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
   .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
@@ -3806,17 +3809,17 @@ EVC_TH:
   .byte $00,$00,$00,$00,$00,$00,$00,$00,$01,$01,$01,$01,$01,$01,$01,$01
   .byte $01,$02,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
   .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-; palleggio: tonfo di 6 frame sul canale C del chip del giocatore
+; dribble: 6-frame thud on channel C of the chip of the player
 DRIB_V:
   .byte $0D,$0B,$08,$05,$03,$01
 DRIB_TL:
   .byte $38,$7E,$C4,$0B,$51,$97
 DRIB_TH:
   .byte $02,$02,$02,$03,$03,$03
-; applauso: inviluppo (un valore ogni 8 frame, 96 frame in tutto)
+; applause: envelope (one value every 8 frames, 96 frames in all)
 APPL_ENV:
   .byte $05,$09,$0C,$0D,$0E,$0E,$0E,$0D,$0C,$0A,$08,$06,$03
-; applauso finale: inviluppo (un valore ogni 16 frame, 150 frame in tutto)
+; final applause: envelope (one value every 16 frames, 150 frames in all)
 CAPPL_ENV:
   .byte $07,$0B,$0E,$0F,$0F,$0F,$0F,$0E,$0C,$09
 

@@ -2167,9 +2167,9 @@ VDP_INT_ON:
 ; SAT: 0 lander, 1 flame, 2-5 explosion (2x2 sprites), then Y=$D0 = end of list
 
 ; ===============================================================
-;  PIXEL (con copia in RAM della bitmap e dei colori)
+;  PIXEL (with a copy of the bitmap and of the colours in RAM)
 ; ===============================================================
-; indirizzo cella/riga: T0 = (x & $F8) | (y & 7), T1 = y / 8
+; cell / line address: T0 = (x & $F8) | (y & 7), T1 = y / 8
 PIX_ADDR:
   LDA PX
   AND #$F8
@@ -2185,7 +2185,7 @@ PIX_ADDR:
   STA T1
   RTS
 
-PLOT_SET:                      ; accende (PX,PY) con colore PCOL
+PLOT_SET:                      ; lights (PX,PY) with colour PCOL
   JSR PIX_ADDR
   LDA PX
   AND #$07
@@ -2224,7 +2224,7 @@ PLOT_SET:                      ; accende (PX,PY) con colore PCOL
   STA VDATA
   RTS
 
-PLOT_CLR:                      ; spegne (PX,PY)
+PLOT_CLR:                      ; clears (PX,PY)
   JSR PIX_ADDR
   LDA PX
   AND #$07
@@ -2253,9 +2253,9 @@ PLOT_CLR:                      ; spegne (PX,PY)
 
 
 ; ===============================================================
-;  CELLE 8x8 (copia in RAM + VRAM)
+;  8x8 CELLS (copy in RAM + VRAM)
 ; ===============================================================
-; da CELLC/CELLR: T0 = col*8, T1 = riga, SPTR = pattern in RAM, PTR2 = colori in RAM
+; from CELLC/CELLR: T0 = col*8, T1 = row, SPTR = pattern in RAM, PTR2 = colours in RAM
 CELL_SETUP:
   LDA CELLC
   ASL A
@@ -2275,7 +2275,7 @@ CELL_SETUP:
   STA PTR2+1
   RTS
 
-; copia la cella (copia in RAM) nella VRAM: richiede CELL_SETUP
+; copies the cell (copy in RAM) into the VRAM: needs CELL_SETUP
 FLUSH_CELL:
   LDA T0
   STA VREG
@@ -2303,7 +2303,7 @@ FLUSH_CELL:
   BNE .fl_c
   RTS
 
-; disegna il tile a PTR (8 pattern + 8 colori) in (CELLC,CELLR); PTR avanza di 16
+; draws the tile at PTR (8 pattern + 8 colour bytes) in (CELLC,CELLR); PTR moves on by 16
 BLIT_CELL:
   JSR CELL_SETUP
   LDY #$00
@@ -2336,7 +2336,7 @@ BLIT_CELL:
 .bl_n2:
   JMP FLUSH_CELL
 
-; A = codice ASCII ($20-$5F), in (CELLC,CELLR) con colore TCOL
+; A = ASCII code ($20-$5F), in (CELLC,CELLR) with colour TCOL
 PUT_CHAR:
   SEC
   SBC #$20
@@ -2369,7 +2369,7 @@ PUT_CHAR:
   BNE .pc_l
   JMP FLUSH_CELL
 
-; A = byte BCD: due cifre, CELLC avanza di 2
+; A = BCD byte: two digits, CELLC moves on by 2
 PUT_BCD:
   PHA
   LSR A
@@ -2386,7 +2386,7 @@ PUT_BCD:
   INC CELLC
   RTS
 
-; record: riga, colonna, colore (fg), caratteri..., 0   (fine lista: riga = $FF)
+; record: row, column, colour (fg), characters..., 0   (end of the list: row = $FF)
 DRAW_TEXT:
   LDY #$00
   LDA (TP),Y
@@ -2426,7 +2426,7 @@ DRAW_TEXT:
 .dt_end:
   RTS
 
-; parole grandi: riga, colonna, n, id lettere... (fine lista: riga = $FF)
+; big words: row, column, n, letter ids... (end of the list: row = $FF)
 DRAW_BIGWORDS:
   LDY #$00
   LDA (TP),Y
@@ -2438,7 +2438,7 @@ DRAW_BIGWORDS:
   STA CELLC
   INY
   LDA (TP),Y
-  STA T7                       ; numero di lettere
+  STA T7                       ; number of letters
   INY
 .bw_l:
   LDA (TP),Y
@@ -2498,7 +2498,7 @@ BIGLET:                        ; A = lettera, in (CELLC,CELLR), 2x2 tile
 
 
 
-; riga di inizio in A, numero di righe in X: azzera i pattern, colori = CLRCOL
+; first row in A, number of rows in X: clears the patterns, colours = CLRCOL
 CLEAR_ROWS:
   STA T0
   STX T1
@@ -2565,7 +2565,7 @@ CLEAR_SCREEN:
   JMP CLEAR_ROWS
 
 
-; name table: tile = posizione (0-255 in ognuno dei 3 terzi) => bitmap piena
+; name table: tile = position (0-255 in each of the 3 thirds) => full bitmap
 INIT_NAME_TABLE:
   LDA #<VDP_NAME_TABLE_BASE
   STA VREG
@@ -2658,7 +2658,7 @@ FILL_:
 ITAB:
    .byte $02,$C6,$0E,$FF       ;INITIALIZE G2 MODE
    .byte $03,$76,$03,$01       ;R0: G2 | R1: 16K, 16x16 spr | R2: name $3800 | R3: color $2000
-                               ;R4: pattern $0000 | R5: SAT $3B00 | R6: sprite pattern $1800 | R7: sfondo nero
+                               ;R4: pattern $0000 | R5: SAT $3B00 | R6: sprite pattern $1800 | R7: black background
 
 
 ; ===============================================================
@@ -2679,7 +2679,7 @@ SND_INIT:
   STA SND_PH
   JMP SND_GAME_MODE
 
-SND_CLEAR_SH:                   ; tutti i registri shadow a 0
+SND_CLEAR_SH:                   ; all the shadow registers to 0
   LDX #10
   LDA #$00
 .cs_l:
@@ -2689,7 +2689,7 @@ SND_CLEAR_SH:                   ; tutti i registri shadow a 0
   BPL .cs_l
   RTS
 
-; modalita' gioco: silenzio, mixer = tono A + rumore B + tono C
+; game mode: silence, mixer = tone A + noise B + tone C
 SND_GAME_MODE:
   JSR SND_CLEAR_SH
   LDA #$2A
@@ -2708,7 +2708,7 @@ SND_GAME_MODE:
   STA EX_POS+1
   JMP AY_FLUSH
 
-; scrive i registri 0-10 dei due shadow sui due AY
+; writes registers 0-10 of the two shadows to the two AYs
 AY_FLUSH:
   LDX #10
 .af_l:
@@ -2727,7 +2727,7 @@ AY_FLUSH:
 ; requests from the main loop (they keep A, X, Y)
 ;   pan: X = 0 left, 1 right, 2 both
 ; ---------------------------------------------------------------
-SFX_WHISTLE:                    ; A = id fischio (W_*), X = pan
+SFX_WHISTLE:                    ; A = whistle id (W_*), X = pan
   PHA
   PHX
   STA SMT0
@@ -2750,11 +2750,11 @@ SFX_WHISTLE:                    ; A = id fischio (W_*), X = pan
   PLA
   RTS
 
-SB_SET:                         ; X = chip, SMT0 = id esplosione
+SB_SET:                         ; X = chip, SMT0 = explosion id
   LDA EX_ID,X
   CMP #S_BIG
   BNE .sbs_set
-  LDA SMT0                      ; un botto piccolo non interrompe uno grande
+  LDA SMT0                      ; a small bang does not stop a big one
   CMP #S_BIG
   BNE .sbs_ret
 .sbs_set:

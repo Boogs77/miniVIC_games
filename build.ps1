@@ -1,16 +1,16 @@
-# build.ps1 - assembla i giochi con vasm6502 e pubblica i .bin su GitHub
+# build.ps1 - assembles the games with vasm6502 and publishes the .bin files on GitHub
 #
-#   .\build.ps1                 tutti i file .asm della cartella
-#   .\build.ps1 tank.asm        solo i file indicati
-#   .\build.ps1 -NoPublish      crea i .bin senza commit e push
+#   .\build.ps1                 all the .asm files of the folder
+#   .\build.ps1 tank.asm        only the files given
+#   .\build.ps1 -NoPublish      builds the .bin files without commit and push
 #
-# Il percorso di vasm6502_oldstyle.exe si legge dalla variabile VASM
-# oppure dalla prima riga del file vasm.path (escluso da git).
-# Se esiste il file copy.path (escluso da git), i .asm e i .bin
-# assemblati vengono copiati anche nella cartella indicata.
-# Con Node.js installato, ogni gioco assemblato viene fatto girare
-# nell'emulatore (tools\screenshots.js) e gli screenshot finiscono
-# in screenshots\ e su GitHub insieme ai .bin.
+# The path of vasm6502_oldstyle.exe is read from the VASM variable
+# or from the first line of the file vasm.path (not in git).
+# If the file copy.path exists (not in git), the .asm and .bin files
+# built are also copied to the folder it names.
+# With Node.js installed, every game built is run in the emulator
+# (tools\screenshots.js) and the screenshots go to screenshots\
+# and to GitHub together with the .bin files.
 
 param([switch]$NoPublish, [Parameter(ValueFromRemainingArguments = $true)][string[]]$Files)
 
@@ -26,7 +26,7 @@ if (-not $vasm -or -not (Test-Path $vasm)) {
 if (-not $Files) { $Files = (Get-ChildItem *.asm).Name }
 New-Item -ItemType Directory -Force bin | Out-Null
 
-# ---------------- assemblaggio ----------------
+# ---------------- assembly ----------------
 $built  = @()
 $failed = @()
 foreach ($f in $Files) {
@@ -41,7 +41,7 @@ if ($failed) {
   exit 1
 }
 
-# ---------------- copia nella cartella locale ----------------
+# ---------------- copy to the local folder ----------------
 if (Test-Path copy.path) {
   $dest = (Get-Content copy.path -TotalCount 1).Trim()
   if (Test-Path $dest) {
@@ -52,7 +52,7 @@ if (Test-Path copy.path) {
   }
 }
 
-# ---------------- screenshot nell'emulatore ----------------
+# ---------------- screenshots in the emulator ----------------
 if (Get-Command node -ErrorAction SilentlyContinue) {
   $games = $Files | ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_) }
   node tools\screenshots.js $games
@@ -66,7 +66,7 @@ if (Get-Command node -ErrorAction SilentlyContinue) {
 }
 if ($NoPublish) { exit 0 }
 
-# ---------------- pubblicazione su GitHub ----------------
+# ---------------- publication on GitHub ----------------
 git add -- $built
 git diff --cached --quiet
 if ($LASTEXITCODE -eq 0) {

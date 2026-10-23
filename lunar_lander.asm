@@ -1596,9 +1596,9 @@ SAT_BUFFER:    .byte HIDE_Y,$00,$00,$0F
 
 
 ; ===============================================================
-;  PIXEL (con copia in RAM della bitmap e dei colori)
+;  PIXEL (with a copy of the bitmap and of the colours in RAM)
 ; ===============================================================
-; indirizzo cella/riga: T0 = (x & $F8) | (y & 7), T1 = y / 8
+; cell / line address: T0 = (x & $F8) | (y & 7), T1 = y / 8
 PIX_ADDR:
   LDA PX
   AND #$F8
@@ -1614,7 +1614,7 @@ PIX_ADDR:
   STA T1
   RTS
 
-PLOT_SET:                      ; accende (PX,PY) con colore PCOL
+PLOT_SET:                      ; lights (PX,PY) with colour PCOL
   JSR PIX_ADDR
   LDA PX
   AND #$07
@@ -1653,7 +1653,7 @@ PLOT_SET:                      ; accende (PX,PY) con colore PCOL
   STA VDATA
   RTS
 
-PLOT_CLR:                      ; spegne (PX,PY)
+PLOT_CLR:                      ; clears (PX,PY)
   JSR PIX_ADDR
   LDA PX
   AND #$07
@@ -1682,9 +1682,9 @@ PLOT_CLR:                      ; spegne (PX,PY)
 
 
 ; ===============================================================
-;  CELLE 8x8 (copia in RAM + VRAM)
+;  8x8 CELLS (copy in RAM + VRAM)
 ; ===============================================================
-; da CELLC/CELLR: T0 = col*8, T1 = riga, SPTR = pattern in RAM, PTR2 = colori in RAM
+; from CELLC/CELLR: T0 = col*8, T1 = row, SPTR = pattern in RAM, PTR2 = colours in RAM
 CELL_SETUP:
   LDA CELLC
   ASL A
@@ -1704,7 +1704,7 @@ CELL_SETUP:
   STA PTR2+1
   RTS
 
-; copia la cella (copia in RAM) nella VRAM: richiede CELL_SETUP
+; copies the cell (copy in RAM) into the VRAM: needs CELL_SETUP
 FLUSH_CELL:
   LDA T0
   STA VREG
@@ -1732,7 +1732,7 @@ FLUSH_CELL:
   BNE .fl_c
   RTS
 
-; disegna il tile a PTR (8 pattern + 8 colori) in (CELLC,CELLR); PTR avanza di 16
+; draws the tile at PTR (8 pattern + 8 colour bytes) in (CELLC,CELLR); PTR moves on by 16
 BLIT_CELL:
   JSR CELL_SETUP
   LDY #$00
@@ -1765,7 +1765,7 @@ BLIT_CELL:
 .bl_n2:
   JMP FLUSH_CELL
 
-; A = codice ASCII ($20-$5F), in (CELLC,CELLR) con colore TCOL
+; A = ASCII code ($20-$5F), in (CELLC,CELLR) with colour TCOL
 PUT_CHAR:
   SEC
   SBC #$20
@@ -1798,7 +1798,7 @@ PUT_CHAR:
   BNE .pc_l
   JMP FLUSH_CELL
 
-; A = byte BCD: due cifre, CELLC avanza di 2
+; A = BCD byte: two digits, CELLC moves on by 2
 PUT_BCD:
   PHA
   LSR A
@@ -1815,7 +1815,7 @@ PUT_BCD:
   INC CELLC
   RTS
 
-; record: riga, colonna, colore (fg), caratteri..., 0   (fine lista: riga = $FF)
+; record: row, column, colour (fg), characters..., 0   (end of the list: row = $FF)
 DRAW_TEXT:
   LDY #$00
   LDA (TP),Y
@@ -1855,7 +1855,7 @@ DRAW_TEXT:
 .dt_end:
   RTS
 
-; parole grandi: riga, colonna, n, id lettere... (fine lista: riga = $FF)
+; big words: row, column, n, letter ids... (end of the list: row = $FF)
 DRAW_BIGWORDS:
   LDY #$00
   LDA (TP),Y
@@ -1867,7 +1867,7 @@ DRAW_BIGWORDS:
   STA CELLC
   INY
   LDA (TP),Y
-  STA T7                       ; numero di lettere
+  STA T7                       ; number of letters
   INY
 .bw_l:
   LDA (TP),Y
@@ -1927,7 +1927,7 @@ BIGLET:                        ; A = lettera, in (CELLC,CELLR), 2x2 tile
 
 
 
-; riga di inizio in A, numero di righe in X: azzera pattern e colori (nero su nero)
+; first row in A, number of rows in X: clears patterns and colours (black on black)
 CLEAR_ROWS:
   STA T0
   STX T1
@@ -1994,7 +1994,7 @@ CLEAR_SCREEN:
   JMP CLEAR_ROWS
 
 
-; name table: tile = posizione (0-255 in ognuno dei 3 terzi) => bitmap piena
+; name table: tile = position (0-255 in each of the 3 thirds) => full bitmap
 INIT_NAME_TABLE:
   LDA #<VDP_NAME_TABLE_BASE
   STA VREG
@@ -2087,7 +2087,7 @@ FILL_:
 ITAB:
    .byte $02,$C6,$0E,$FF       ;INITIALIZE G2 MODE
    .byte $03,$76,$03,$01       ;R0: G2 | R1: 16K, 16x16 spr | R2: name $3800 | R3: color $2000
-                               ;R4: pattern $0000 | R5: SAT $3B00 | R6: sprite pattern $1800 | R7: sfondo nero
+                               ;R4: pattern $0000 | R5: SAT $3B00 | R6: sprite pattern $1800 | R7: black background
 
 
 
@@ -2111,7 +2111,7 @@ SND_INIT:
   STA SND_PH
   JMP SND_GAME_MODE
 
-SND_CLEAR_SH:                   ; tutti i registri shadow a 0
+SND_CLEAR_SH:                   ; all the shadow registers to 0
   LDX #10
   LDA #$00
 .cs_l:
@@ -2121,7 +2121,7 @@ SND_CLEAR_SH:                   ; tutti i registri shadow a 0
   BPL .cs_l
   RTS
 
-; modalita' gioco: silenzio, mixer = tono A + rumore B + tono C
+; game mode: silence, mixer = tone A + noise B + tone C
 SND_GAME_MODE:
   JSR SND_CLEAR_SH
   LDA #$2A
@@ -2140,7 +2140,7 @@ SND_GAME_MODE:
   STA EX_POS+1
   JMP AY_FLUSH
 
-; scrive i registri 0-10 dei due shadow sui due AY
+; writes registers 0-10 of the two shadows to the two AYs
 AY_FLUSH:
   LDX #10
 .af_l:
@@ -2155,7 +2155,7 @@ AY_FLUSH:
   RTS
 
 ; ---------------------------------------------------------------
-; chiamata dall'NMI: A,X,Y salvati qui
+; called by the NMI: A,X,Y saved here
 ; ---------------------------------------------------------------
 SND_TICK:
   PHA
@@ -2172,7 +2172,7 @@ SND_TICK:
   BRA .st_run
 .st_song:
   SEC
-  SBC #CMD_TITLE                ; 0 = titolo, 1 = sconfitta
+  SBC #CMD_TITLE                ; 0 = title, 1 = game over
   JSR SND_START
 .st_run:
   LDA SND_MODE
@@ -2189,16 +2189,16 @@ SND_TICK:
   RTS
 
 ; ---------------------------------------------------------------
-; avvia una canzone: A = 0 titolo, 1 sconfitta
+; starts a song: A = 0 title, 1 game over
 ; ---------------------------------------------------------------
 SND_START:
   ASL A
   ASL A
-  STA SN0                       ; canzone * 4
+  STA SN0                       ; song * 4
   JSR SND_CLEAR_SH
-  LDA #$38                      ; sinistro: 3 toni
+  LDA #$38                      ; left: 3 tones
   STA SH_L+7
-  LDA #$2A                      ; destro: tono A, rumore B (batteria), tono C
+  LDA #$2A                      ; right: tone A, noise B (drums), tone C
   STA SH_R+7
   LDX #$03
 .ss_trk:
@@ -2211,7 +2211,7 @@ SND_START:
   LDA SONGP_HI,Y
   STA TR_PH,X
   LDA #$01
-  STA TR_CT,X                   ; il primo DEC porta a 0 -> legge subito la prima nota
+  STA TR_CT,X                   ; the first DEC brings it to 0 -> reads the first note at once
   STA TR_ACT,X
   LDA #$00
   STA TR_NOTE,X
@@ -2225,7 +2225,7 @@ SND_START:
   RTS
 
 ; ---------------------------------------------------------------
-; legge il prossimo evento della traccia X: .byte nota, durata (frame); $FF = fine
+; reads the next event of track X: .byte note, length (frames); $FF = end
 ; ---------------------------------------------------------------
 MUS_FETCH:
   LDA TR_PL,X
@@ -2236,7 +2236,7 @@ MUS_FETCH:
   LDA (SND_PTR),Y
   CMP #$FF
   BNE .mf_note
-  LDA #$00                      ; fine traccia
+  LDA #$00                      ; end of the track
   STA TR_ACT,X
   STA TR_NOTE,X
   STA TR_VOL,X
@@ -2256,7 +2256,7 @@ MUS_FETCH:
   LDA #$00
   STA TR_AGE,X
   LDA TR_NOTE,X
-  BEQ .mf_vol                   ; pausa: volume 0
+  BEQ .mf_vol                   ; rest: volume 0
   CPX #$03
   BEQ .mf_drum
   LDA V0_TAB,X
@@ -2269,10 +2269,10 @@ MUS_FETCH:
   RTS
 
 ; ---------------------------------------------------------------
-; un frame di musica: avanza le 4 tracce e riempie gli shadow
+; one frame of music: advances the 4 tracks and fills the shadows
 ; ---------------------------------------------------------------
 MUS_TICK:
-  LDX #$02                      ; tracce a tono: 0 melodia, 1 arpeggio, 2 basso
+  LDX #$02                      ; tone tracks: 0 melody, 1 arpeggio, 2 bass
 .mt_trk:
   LDA TR_ACT,X
   BEQ .mt_next
@@ -2293,7 +2293,7 @@ MUS_TICK:
 .mt_next:
   DEX
   BPL .mt_trk
-  LDX #$03                      ; traccia 3: batteria
+  LDX #$03                      ; track 3: drums
   LDA TR_ACT,X
   BEQ .mt_dr_end
   DEC TR_CT,X
@@ -2310,8 +2310,8 @@ MUS_TICK:
   BEQ .mt_dr_end
   DEC TR_VOL,X
 .mt_dr_end:
-  ; ---- melodia: su entrambi i chip, il destro scordato di 1 passo (effetto chorus);
-  ;      vibrato sulle note lunghe e non troppo acute
+  ; ---- melody: on both chips, the right one detuned by 1 step (chorus effect)
+  ;      vibrato on long notes that are not too high
   LDX TR_NOTE
   BEQ .mt_l_off
   LDA TP_LO,X
@@ -2344,7 +2344,7 @@ MUS_TICK:
 .mt_l_v:
   STA SH_L+8
   STA SH_R+8
-  ; ---- arpeggio: solo chip sinistro, canale B
+  ; ---- arpeggio: left chip only, channel B
   LDX TR_NOTE+1
   BEQ .mt_h_off
   LDA TP_LO,X
@@ -2357,7 +2357,7 @@ MUS_TICK:
   LDA #$00
 .mt_h_v:
   STA SH_L+9
-  ; ---- basso: entrambi i chip, canale C
+  ; ---- bass: both chips, channel C
   LDX TR_NOTE+2
   BEQ .mt_b_off
   LDA TP_LO,X
@@ -2373,19 +2373,19 @@ MUS_TICK:
 .mt_b_v:
   STA SH_L+10
   STA SH_R+10
-  ; ---- batteria: chip destro, rumore sul canale B
+  ; ---- drums: right chip, noise on channel B
   LDX TR_NOTE+3
   LDA DRUM_NP,X
   STA SH_R+6
   LDA TR_VOL+3
   STA SH_R+9
-  ; ---- canzone finita?
+  ; ---- song over?
   LDA TR_ACT
   ORA TR_ACT+1
   ORA TR_ACT+2
   ORA TR_ACT+3
   BNE .mt_end
-  JSR SND_GAME_MODE             ; silenzio, SND_BUSY = 0
+  JSR SND_GAME_MODE             ; silence, SND_BUSY = 0
 .mt_end:
   RTS
 
@@ -2396,7 +2396,7 @@ MUS_TICK:
 ;   engine: SND_THR = 1  (noise B + rumble C, when no explosion is playing)
 ; ---------------------------------------------------------------
 SFX_TICK:
-  LDA SND_RND                   ; LFSR per il crepitio dell'esplosione
+  LDA SND_RND                   ; LFSR for the crackle of the explosion
   ASL A
   BCC .sf_r
   EOR #$1D
@@ -2410,12 +2410,12 @@ SFX_TICK:
   ASL A
   ASL A
   ASL A
-  TAY                           ; Y = chip * 16 = offset dello shadow (SH_R = SH_L + 16)
+  TAY                           ; Y = chip * 16 = offset of the shadow (SH_R = SH_L + 16)
   LDA #$00
   STA SH_L+8,Y
   STA SH_L+9,Y
   STA SH_L+10,Y
-  LDA WH_ID,X                   ; ---- fischio
+  LDA WH_ID,X                   ; ---- whistle
   BEQ .sf_nowh
   TAX
   LDA WH_START,X
@@ -2442,7 +2442,7 @@ SFX_TICK:
   LDA #$00
   STA WH_ID,X
 .sf_nowh:
-  LDX SND_T1                    ; ---- esplosione
+  LDX SND_T1                    ; ---- explosion
   LDA EX_ID,X
   BEQ .sf_thr
   TAX
@@ -2459,7 +2459,7 @@ SFX_TICK:
   TAX
   LDA EX_NV,X
   BEQ .sf_e1
-  LDA SND_RND                   ; crepitio: -1 a caso
+  LDA SND_RND                   ; crackle: -1 at random
   LSR A
   LDA EX_NV,X
   SBC #$00
@@ -2469,7 +2469,7 @@ SFX_TICK:
   CPY #$00
   BEQ .sf_e2
   CLC
-  ADC #$03                      ; chip destro: rumore leggermente diverso
+  ADC #$03                      ; right chip: slightly different noise
 .sf_e2:
   STA SH_L+6,Y
   LDA EX_VC,X
@@ -2517,7 +2517,7 @@ SFX_TICK:
 ; requests from the main loop (they keep A, X, Y)
 ;   pan: X = 0 left, 1 right, 2 both
 ; ---------------------------------------------------------------
-SFX_WHISTLE:                    ; A = id fischio (W_*), X = pan
+SFX_WHISTLE:                    ; A = whistle id (W_*), X = pan
   PHA
   PHX
   STA SMT0
@@ -2540,11 +2540,11 @@ SFX_WHISTLE:                    ; A = id fischio (W_*), X = pan
   PLA
   RTS
 
-SB_SET:                         ; X = chip, SMT0 = id esplosione
+SB_SET:                         ; X = chip, SMT0 = explosion id
   LDA EX_ID,X
   CMP #S_BIG
   BNE .sbs_set
-  LDA SMT0                      ; un botto piccolo non interrompe uno grande
+  LDA SMT0                      ; a small bang does not stop a big one
   CMP #S_BIG
   BNE .sbs_ret
 .sbs_set:
@@ -2944,7 +2944,7 @@ SPRITES:
   .byte $00,$00,$00,$00,$00,$00,$00,$00,$C0,$80,$00,$40,$00,$00,$00,$00
   .byte $00,$80,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 
-; ---- periodi AY (1 MHz): TP = 62500 / f.  indice = nota MIDI - 35 (1 = C2 ... 55 = F#6), 0 = pausa
+; ---- AY periods (1 MHz): TP = 62500 / f.  index = MIDI note - 35 (1 = C2 ... 55 = F#6), 0 = rest
 TP_LO:
   .byte $00,$BC,$86,$53,$24,$F6,$CC,$A4
   .byte $7E,$5A,$38,$18,$FA,$DE,$C3,$AA
@@ -2961,11 +2961,11 @@ TP_HI:
   .byte $00,$00,$00,$00,$00,$00,$00,$00
   .byte $00,$00,$00,$00,$00,$00,$00,$00
   .byte $00,$00,$00,$00,$00,$00,$00,$00
-V0_TAB:        .byte 13, 9, 12, 0      ; volume all'attacco della nota (melodia, arpeggio, basso)
-FLOOR_TAB:     .byte 9, 4, 8, 0        ; volume minimo raggiunto dal decadimento
-DECMASK_TAB:   .byte 7, 3, 3, 0        ; il volume cala di 1 quando (eta' AND maschera) = 0
-VIB_TAB:       .byte 0, 1, 1, 0, 0, $FF, $FF, 0   ; vibrato +-1 passo (signed)
-; batteria: 1 cassa, 2 rullante, 3 charleston, 4 piatto
+V0_TAB:        .byte 13, 9, 12, 0      ; volume at the attack of the note (melody, arpeggio, bass)
+FLOOR_TAB:     .byte 9, 4, 8, 0        ; lowest volume reached by the decay
+DECMASK_TAB:   .byte 7, 3, 3, 0        ; the volume drops by 1 when (age AND mask) = 0
+VIB_TAB:       .byte 0, 1, 1, 0, 0, $FF, $FF, 0   ; vibrato +-1 step (signed)
+; drums: 1 kick, 2 snare, 3 hi-hat, 4 cymbal
 DRUM_NP:       .byte 0, 28, 10, 2, 5
 DRUM_V0:       .byte 0, 15, 14, 8, 15
 DRUM_MASK:     .byte 0, 0, 0, 0, 7

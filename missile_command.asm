@@ -1,32 +1,36 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;                                                              ;
-;   ARCADE_MISSILE_COMMAND  -  difendi le citta' dai missili   ;
+;   ARCADE_MISSILE_COMMAND  -  defend the cities               ;
 ;   65C02 assembly, TMS9918A Graphics II (bitmap 256x192)      ;
-;   Base: 1vs1 / tank (NMI + trampolino $0FD0, joystick VIA)   ;
+;   Base: 1vs1 / tank (NMI + trampoline $0FD0, joystick VIA)   ;
 ;                                                              ;
-;   - P1 su PORTA $D581, P2 su PORTB $D580 (si unisce premendo ;
-;     un tasto del suo joystick); i due mirini giocano insieme ;
-;   - joystick = muove il mirino                               ;
-;       tasto 1 (bit4) = spara dalla base piu' vicina al mirino;
-;       tasto 2 (bit5) = spara dalla base centrale (piu' veloce)
-;   - 6 citta' e 3 basi con 10 missili ciascuna                ;
-;   - schermo = bitmap: scie, esplosioni e testi sono disegnati;
-;     pixel per pixel; una copia dello schermo e' in RAM       ;
-;     ($4000 pattern, $6000 colori) per ridisegnare le celle   ;
-;   - SONORO (2 x AY-3-8910, motore di tank_sound.asm): breve  ;
-;     musica al titolo, fischi diversi per i missili, esplosio-;
-;     ni piccole e grandi, musica di sconfitta; tutto suonato  ;
-;     dall'NMI (SND_TICK), il main loop lascia solo richieste  ;
-;   - il main loop scrive sul VDP solo con l'interrupt spento  ;
-;     (VDP_INT_OFF subito dopo l'NMI); l'NMI aggiorna solo la  ;
-;     SAT (i mirini) durante il vblank                         ;
+;   - P1 on PORTA $D581, P2 on PORTB $D580 (joins by           ;
+;     pressing a button of his joystick); the two              ;
+;     cross-hairs play together                                ;
+;   - joystick = moves the cross-hair                          ;
+;       button 1 (bit4) = fires from the base nearest to       ;
+;                         the cross-hair                       ;
+;       button 2 (bit5) = fires from the centre base (faster)  ;
+;   - 6 cities and 3 bases with 10 missiles each               ;
+;   - screen = bitmap: trails, explosions and texts are        ;
+;     drawn pixel by pixel; a copy of the screen is in RAM     ;
+;     ($4000 patterns, $6000 colours) to redraw the cells      ;
+;   - SOUND (2 x AY-3-8910, engine of tank_sound.asm):         ;
+;     short title music, different whistles for the            ;
+;     missiles, small and big explosions, game over music;     ;
+;     everything is played by the NMI (SND_TICK), the main     ;
+;     loop only leaves requests                                ;
+;   - the main loop writes the VDP only with the interrupt     ;
+;     off (VDP_INT_OFF just after the NMI); the NMI only       ;
+;     updates the SAT (the cross-hairs) during the vblank      ;
+;                                                              ;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ; ---------------- zero page ----------------
 FRAME_CNT   = $60
 LAST_FRAME  = $61
 RND         = $62
-VINT        = $63      ; 1 = interrupt VDP acceso
+VINT        = $63      ; 1 = VDP interrupt on
 T0          = $64
 T1          = $65
 T2          = $66
@@ -35,26 +39,26 @@ T4          = $68
 T5          = $69
 T6          = $6A
 T7          = $6B
-PTR         = $6C      ; 2 byte
-PTR2        = $6E      ; 2 byte: puntatore ai colori della cella (shadow)
-SPTR        = $70      ; 2 byte: puntatore al pattern della cella (shadow)
-TP          = $72      ; 2 byte: record dei testi
-ECP         = $74      ; 2 byte: forma esplosione, cella corrente
-ESH         = $76      ; 2 byte: forma esplosione, inizio
-CELLC       = $78      ; colonna cella (0-31)
-CELLR       = $79      ; riga cella (0-23)
-TCOL        = $7A      ; byte colore (fg<<4 | bg) per i testi
-PX          = $7B      ; pixel da disegnare
+PTR         = $6C      ; 2 bytes
+PTR2        = $6E      ; 2 bytes: pointer to the colours of the cell (shadow)
+SPTR        = $70      ; 2 bytes: pointer to the pattern of the cell (shadow)
+TP          = $72      ; 2 bytes: text records
+ECP         = $74      ; 2 bytes: explosion shape, current cell
+ESH         = $76      ; 2 bytes: explosion shape, start
+CELLC       = $78      ; cell column (0-31)
+CELLR       = $79      ; cell row (0-23)
+TCOL        = $7A      ; colour byte (fg<<4 | bg) for texts
+PX          = $7B      ; pixel to draw
 PY          = $7C
 PCOL        = $7D
-LX0         = $7E      ; linea: partenza e arrivo
+LX0         = $7E      ; line: start and end
 LY0         = $7F
 LX1         = $80
 LY1         = $81
-EXX         = $82      ; centro nuova esplosione
+EXX         = $82      ; centre of a new explosion
 EXY         = $83
 NSTEP       = $84
-NACT_EN     = $85      ; testate nemiche in volo
+NACT_EN     = $85      ; enemy warheads in flight
 SLOTV       = $86
 MCNT        = $87
 SHAPEV      = $88
@@ -64,15 +68,15 @@ ER0         = $8B
 EI          = $8C
 ESTEP       = $8D
 BUDGET      = $8E
-P_JOY       = $8F      ; 2 byte (joystick, 1 = premuto)
-P_OLD       = $91      ; 2 byte
-P_CX        = $93      ; 2 byte: mirino X
-P_CY        = $95      ; 2 byte: mirino Y
-P_ACT       = $97      ; 2 byte: mirino attivo
+P_JOY       = $8F      ; 2 bytes (joystick, 1 = pressed)
+P_OLD       = $91      ; 2 bytes
+P_CX        = $93      ; 2 bytes: cross-hair X
+P_CY        = $95      ; 2 bytes: cross-hair Y
+P_ACT       = $97      ; 2 bytes: cross-hair active
 FBTN        = $99
 CURI        = $9A
-SCORE       = $9B      ; 3 byte BCD (basso, medio, alto)
-HISCORE     = $9E      ; 3 byte BCD
+SCORE       = $9B      ; 3 bytes BCD (low, middle, high)
+HISCORE     = $9E      ; 3 bytes BCD
 WAVE        = $A1
 WAVE_BCD    = $A2
 HUD_DIRTY   = $A3
@@ -82,7 +86,7 @@ SPAWN_TMR   = $A6
 SPAWN_DLY   = $A7
 MAX_ACT     = $A8
 EN_SPF      = $A9
-NEXTB       = $AA      ; prossima soglia citta' extra (BCD, decine di migliaia)
+NEXTB       = $AA      ; next extra city threshold (BCD, tens of thousands)
 GO_TMR      = $AB
 NCITY       = $AC
 ADLO        = $AD
@@ -100,81 +104,81 @@ AMI         = $B8
 MULT        = $B9
 NMIS        = $BA
 
-; ---------------- sonoro: due AY-3-8910, clock 1 MHz ----------------
-AY_R_LATCH = $D380       ; AY destro
+; ---------------- sound: two AY-3-8910, 1 MHz clock ----------------
+AY_R_LATCH = $D380       ; right AY
 AY_R_WRITE = $D381
-AY_L_LATCH = $D384       ; AY sinistro
+AY_L_LATCH = $D384       ; left AY
 AY_L_WRITE = $D385
 
-SN1        = $BB         ; temporanei del sonoro (solo NMI)
+SN1        = $BB         ; sound temporaries (NMI only)
 SND_T1     = $BC
-SH_L       = $C0         ; shadow registri AY sinistro 0-10  (11 byte)
-SH_R       = $D0         ; shadow registri AY destro   0-10  (SH_R = SH_L + 16)
-TR_PL      = $DC         ; 4 tracce: puntatore (lo / hi), contatore, attiva,
-TR_PH      = $E0         ;           nota, volume, eta' della nota
+SH_L       = $C0         ; shadow of the left AY registers 0-10  (11 bytes)
+SH_R       = $D0         ; shadow of the right AY registers 0-10  (SH_R = SH_L + 16)
+TR_PL      = $DC         ; 4 tracks: pointer (lo / hi), counter, active,
+TR_PH      = $E0         ;           note, volume, age of the note
 TR_CT      = $E4
 TR_ACT     = $E8
 TR_NOTE    = $EC
 TR_VOL     = $F0
 TR_AGE     = $F4
-SND_PTR    = $F8         ; 2 byte
-SND_CMD    = $FA         ; comando al motore sonoro (CMD_*), eseguito dall'NMI
-SND_MODE   = $FB         ; 0 = effetti di gioco, 1 = musica
-SND_BUSY   = $FC         ; 1 finche' la canzone sta suonando
+SND_PTR    = $F8         ; 2 bytes
+SND_CMD    = $FA         ; command to the sound engine (CMD_*), run by the NMI
+SND_MODE   = $FB         ; 0 = game effects, 1 = music
+SND_BUSY   = $FC         ; 1 while the song is playing
 SND_PH     = $FD
 SND_RND    = $FE
 SN0        = $FF
 
-WH_ID      = $0700       ; fischio in corso per chip (0 = nessuno)  2 byte
-WH_POS     = $0702       ; frame trascorsi
-EX_ID      = $0704       ; esplosione in corso per chip (0 = nessuna, 1 piccola, 2 grande)
+WH_ID      = $0700       ; whistle playing per chip (0 = none)  2 bytes
+WH_POS     = $0702       ; frames elapsed
+EX_ID      = $0704       ; explosion playing per chip (0 = none, 1 small, 2 big)
 EX_POS     = $0706
-SMT0       = $0708       ; temporanei lato main loop
+SMT0       = $0708       ; temporaries, main loop side
 SMT1       = $0709
 
-CMD_GAME   = 1           ; silenzio + effetti di gioco
-CMD_TITLE  = 2           ; musica del titolo
-CMD_LOSE   = 3           ; musica di sconfitta
+CMD_GAME   = 1           ; silence + game effects
+CMD_TITLE  = 2           ; title music
+CMD_LOSE   = 3           ; game over music
 
 ; ---------------- RAM (array) ----------------
-NM = 24                 ; slot missili (nemici, nostri, scie in cancellazione)
-NE = 8                  ; slot esplosioni
-M_ST   = $0400          ; 0 libero, 1 in volo, 2 scia in cancellazione
-M_TYPE = $0420          ; 0 nemico, 1 nostro
-M_FLG  = $0440          ; bit0 = MIRV: si divide a quota M_SPLY
-M_OX   = $0460          ; origine
+NM = 24                 ; missile slots (enemy, ours, trails being erased)
+NE = 8                  ; explosion slots
+M_ST   = $0400          ; 0 free, 1 flying, 2 trail being erased
+M_TYPE = $0420          ; 0 enemy, 1 ours
+M_FLG  = $0440          ; bit0 = MIRV: splits at height M_SPLY
+M_OX   = $0460          ; origin
 M_OY   = $0480
-M_X    = $04A0          ; posizione corrente
+M_X    = $04A0          ; current position
 M_Y    = $04C0
-M_TX   = $04E0          ; bersaglio
+M_TX   = $04E0          ; target
 M_TY   = $0500
-M_SX   = $0520          ; verso X ($01 / $FF)
-M_SY   = $0540          ; verso Y
-M_MAJ  = $0560          ; 0 = asse maggiore Y, 1 = X
-M_LEN  = $0580          ; passi totali (asse maggiore)
-M_MIN  = $05A0          ; asse minore
-M_ERR  = $05C0          ; errore di Bresenham
-M_REM  = $05E0          ; passi rimasti
-M_SPF  = $0600          ; velocita': frazione
-M_SPI  = $0620          ; velocita': parte intera
+M_SX   = $0520          ; X direction ($01 / $FF)
+M_SY   = $0540          ; Y direction
+M_MAJ  = $0560          ; 0 = major axis Y, 1 = X
+M_LEN  = $0580          ; total steps (major axis)
+M_MIN  = $05A0          ; minor axis
+M_ERR  = $05C0          ; Bresenham error
+M_REM  = $05E0          ; steps left
+M_SPF  = $0600          ; speed: fraction
+M_SPI  = $0620          ; speed: whole part
 M_ACC  = $0640
-M_TG   = $0660          ; sito bersaglio (nemici)
-M_SPLY = $0680          ; quota di divisione MIRV
-X_ST   = $06A0          ; esplosioni
+M_TG   = $0660          ; target site (enemies)
+M_SPLY = $0680          ; MIRV split height
+X_ST   = $06A0          ; explosions
 X_CX   = $06A8
 X_CY   = $06B0
 X_STG  = $06B8
 X_TMR  = $06C0
 X_RAD  = $06C8
-T_ALIVE = $06D0         ; 9 siti: 0 base,1-3 citta',4 base,5-7 citta',8 base
-AMMO    = $06E0         ; 3 basi
+T_ALIVE = $06D0         ; 9 sites: 0 base,1-3 cities,4 base,5-7 cities,8 base
+AMMO    = $06E0         ; 3 bases
 
-SH_PAT = $4000          ; copia dello schermo (pattern) in RAM
-SH_COL = $6000          ; copia dei colori
+SH_PAT = $4000          ; copy of the screen (patterns) in RAM
+SH_COL = $6000          ; copy of the colours
 
-; ---------------- parametri ----------------
-GROUND_Y    = 168       ; riga di impatto (cima di citta' e basi)
-BASE_FY     = 167       ; da dove partono i nostri missili
+; ---------------- parameters ----------------
+GROUND_Y    = 168       ; impact row (top of cities and bases)
+BASE_FY     = 167       ; where our missiles start from
 SPAWN_Y     = 8
 CUR_SPEED   = 3
 CUR_XMIN    = 8
@@ -183,9 +187,9 @@ CUR_YMIN    = 12
 CUR_YMAX    = 160
 BTN_MASK    = %00110000
 HIDE_Y      = $C0
-EXPL_HOLD   = 4         ; frame per ogni fase dell'esplosione
-EXPL_BUDGET = 2         ; esplosioni ridisegnate per frame
-ERASE_N     = 6         ; pixel di scia cancellati per frame
+EXPL_HOLD   = 4         ; frames for each phase of the explosion
+EXPL_BUDGET = 2         ; explosions redrawn per frame
+ERASE_N     = 6         ; trail pixels erased per frame
 COL_ENEMY   = $91
 COL_PLAYER  = $71
 MISS_AMMO   = 10
@@ -203,7 +207,7 @@ VDP_WRITE_VRAM_BIT = %01000000
 VDP_REGISTER_BITS  = %10000000
 
 
- .org $0FD0               ; trampolino chiamato da NMI_HANDLER (bios) con JSR $0FD0
+ .org $0FD0               ; trampoline called by NMI_HANDLER (bios) with JSR $0FD0
 DISPATCH:
   JMP NMI_TASK
 
@@ -217,11 +221,11 @@ RESET:
   JSR CLEAR_VRAM
   JSR INIT_NAME_TABLE
   JSR LOAD_SPRITES
-  JSR SND_INIT                 ; AY a zero (l'interrupt VDP e' ancora spento)
+  JSR SND_INIT                 ; AY silent (the VDP interrupt is still off)
   LDA #$00
   STA DDRA_JOY
   STA DDRB_JOY
-  STA VINT                     ; interrupt VDP spento (R1 = $C6)
+  STA VINT                     ; VDP interrupt off (R1 = $C6)
   STA HISCORE
   STA HISCORE+1
   STA HISCORE+2
@@ -234,11 +238,11 @@ RESET:
 
 
 ; ===============================================================
-;  SCHERMATA START
+;  START SCREEN
 ; ===============================================================
 TITLE:
   LDX #$FF
-  TXS                          ; da qui non si torna indietro: stack pulito
+  TXS                          ; no way back from here: clean stack
   JSR HIDE_SPRITES
   JSR VDP_INT_OFF
   JSR CLEAR_SCREEN
@@ -289,20 +293,20 @@ TITLE:
   LDA HISCORE
   JSR PUT_BCD
   JSR VDP_INT_ON
-  LDA #CMD_TITLE               ; breve musica (si puo' saltare premendo un tasto)
+  LDA #CMD_TITLE               ; short music (a button skips it)
   STA SND_CMD
   JSR WAIT_FIRE
-  LDA FRAME_CNT                ; il momento in cui premi il tasto semina il caso
+  LDA FRAME_CNT                ; the moment you press the button seeds the random generator
   ORA #$01
   STA RND
   JMP NEW_GAME
 
 
 ; ===============================================================
-;  NUOVA PARTITA
+;  NEW GAME
 ; ===============================================================
 NEW_GAME:
-  LDA #CMD_GAME                ; ferma la musica, effetti di gioco
+  LDA #CMD_GAME                ; stops the music, game effects
   STA SND_CMD
   LDA #$00
   STA SCORE
@@ -336,14 +340,14 @@ NEW_GAME:
 
 
 ; ===============================================================
-;  INIZIO ONDATA
+;  START OF A WAVE
 ; ===============================================================
 WAVE_START:
   LDX #$FF
   TXS
   JSR VDP_INT_OFF
   JSR CLEAR_PLAYFIELD
-  ; citta' extra ogni 10000 punti (se ce n'e' una distrutta)
+  ; extra city every 10000 points (if one is destroyed)
   LDA SCORE+2
   CMP NEXTB
   BCC .ws_nobonus
@@ -365,7 +369,7 @@ WAVE_START:
   STA NEXTB
   CLD
 .ws_nobonus:
-  ; le basi sono sempre ricostruite, con tutti i missili
+  ; the bases are always rebuilt, with all the missiles
   LDA #$01
   STA T_ALIVE
   STA T_ALIVE+4
@@ -380,7 +384,7 @@ WAVE_START:
   INX
   CPX #9
   BNE .ws_sites
-  ; azzera slot
+  ; clear the slots
   LDA #$00
   LDX #(NM-1)
 .ws_cm:
@@ -394,7 +398,7 @@ WAVE_START:
   BPL .ws_ce
   STA GO_TMR
   STA NACT_EN
-  ; parametri ondata (indice = ondata-1, massimo 14)
+  ; wave parameters (index = wave-1, up to 14)
   LDX WAVE
   DEX
   CPX #15
@@ -410,7 +414,7 @@ WAVE_START:
   STA SPAWN_TMR
   LDA WAVE_SPF,X
   STA EN_SPF
-  ; mirini al centro
+  ; cross-hairs in the centre
   LDA #128
   STA P_CX
   STA P_CX+1
@@ -424,7 +428,7 @@ WAVE_START:
   LDA P_JOY+1
   AND #BTN_MASK
   STA P_OLD+1
-  ; messaggio "ONDATA nn"
+  ; message "WAVE nn"
   LDA #<TXT_WAVE
   STA TP
   LDA #>TXT_WAVE
@@ -461,10 +465,10 @@ WAVE_START:
 
 
 ; ===============================================================
-;  CICLO DI GIOCO: un giro = un frame
+;  GAME LOOP: one pass = one frame
 ; ===============================================================
 GAME_LOOP:
-  JSR VDP_INT_OFF              ; aspetta il vblank e libera il VDP
+  JSR VDP_INT_OFF              ; waits for the vblank and frees the VDP
   JSR READ_JOY
   JSR NEXT_RND
   JSR UPDATE_CURSORS
@@ -491,7 +495,7 @@ GAME_LOOP:
 
 
 ; ---------------------------------------------------------------
-; fine ondata / fine partita
+; end of the wave / end of the game
 ; ---------------------------------------------------------------
 CHECK_END:
   LDA T_ALIVE+1
@@ -503,7 +507,7 @@ CHECK_END:
   ADC T_ALIVE+7
   STA NCITY
   BNE .ce_alive
-  LDA #$00                     ; nessuna citta': niente nuovi lanci, poi fine partita
+  LDA #$00                     ; no cities: no more launches, then game over
   STA SPAWN_LEFT
   LDA GO_TMR
   BNE .ce_dec
@@ -535,7 +539,7 @@ CHECK_END:
 
 
 ; ===============================================================
-;  BONUS DI FINE ONDATA
+;  END OF WAVE BONUS
 ; ===============================================================
 WAVE_END:
   LDX #$FF
@@ -545,14 +549,14 @@ WAVE_END:
   JSR WAIT_FRAMES
   JSR VDP_INT_OFF
   JSR CLEAR_PLAYFIELD
-  ; moltiplicatore = min(ondata, 6)
+  ; multiplier = min(wave, 6)
   LDA WAVE
   CMP #7
   BCC .we_m
   LDA #6
 .we_m:
   STA MULT
-  ; citta' salve
+  ; cities saved
   LDA T_ALIVE+1
   CLC
   ADC T_ALIVE+2
@@ -561,7 +565,7 @@ WAVE_END:
   ADC T_ALIVE+6
   ADC T_ALIVE+7
   STA NCITY
-  ; missili rimasti
+  ; missiles left
   LDA AMMO
   CLC
   ADC AMMO+1
@@ -605,7 +609,7 @@ WAVE_END:
   LDA B_MID
   STA ADMID
   JSR ADD_SCORE
-  ; testi
+  ; texts
   LDA #<TXT_BONUS
   STA TP
   LDA #>TXT_BONUS
@@ -666,13 +670,13 @@ WAVE_END:
 
 
 ; ===============================================================
-;  FINE PARTITA
+;  END OF THE GAME
 ; ===============================================================
 GAME_OVER:
   LDX #$FF
   TXS
   JSR HIDE_SPRITES
-  ; record
+  ; hi score
   LDA SCORE+2
   CMP HISCORE+2
   BCC .go_nr
@@ -728,7 +732,7 @@ GAME_OVER:
   LDA HISCORE
   JSR PUT_BCD
   JSR VDP_INT_ON
-  LDA #CMD_LOSE                ; musica di sconfitta: si aspetta che finisca
+  LDA #CMD_LOSE                ; game over music: wait until it ends
   STA SND_CMD
   LDA #20
   JSR WAIT_FRAMES
@@ -741,7 +745,7 @@ GAME_OVER:
 
 
 ; ---------------------------------------------------------------
-; legge i due joystick (1 = premuto)
+; reads both joysticks (1 = pressed)
 ; ---------------------------------------------------------------
 READ_JOY:
   LDA PORTA_JOY
@@ -764,7 +768,7 @@ NEXT_RND:                      ; LFSR a 8 bit
   RTS
 
 ; ---------------------------------------------------------------
-; aspetta che i pulsanti siano rilasciati e poi premuti
+; waits until the buttons are released and then pressed
 ; ---------------------------------------------------------------
 WAIT_FIRE:
 .wf_rel:
@@ -783,7 +787,7 @@ WAIT_FIRE:
   BEQ .wf_press
   RTS
 
-WAIT_FRAMES:                   ; A = numero di frame (interrupt VDP acceso)
+WAIT_FRAMES:                   ; A = number of frames (VDP interrupt on)
   STA T0
 .wfs_l:
   JSR WAIT_FRAME
@@ -793,7 +797,7 @@ WAIT_FRAMES:                   ; A = numero di frame (interrupt VDP acceso)
 
 
 ; ===============================================================
-;  MIRINI E FUOCO
+;  CROSS-HAIRS AND FIRE
 ; ===============================================================
 UPDATE_CURSORS:
   LDX #$00
@@ -802,9 +806,9 @@ UPDATE_CURSORS:
   JSR CURSOR_X
   RTS
 
-; X = giocatore (0/1)
+; X = player (0/1)
 CURSOR_X:
-  LDA P_JOY,X                  ; fronte di salita dei pulsanti
+  LDA P_JOY,X                  ; rising edge of the buttons
   AND #BTN_MASK
   STA T0
   LDA P_OLD,X
@@ -815,7 +819,7 @@ CURSOR_X:
   STA P_OLD,X
   LDA P_ACT,X
   BNE .cx_act
-  LDA T1                       ; mirino spento: si accende con un tasto
+  LDA T1                       ; cross-hair off: a button switches it on
   BEQ .cx_ret
   LDA #$01
   STA P_ACT,X
@@ -827,7 +831,7 @@ CURSOR_X:
   RTS
 .cx_act:
   LDA P_JOY,X
-  AND #%00001000               ; destra
+  AND #%00001000               ; right
   BEQ .cx_nr
   LDA P_CX,X
   CLC
@@ -839,7 +843,7 @@ CURSOR_X:
   STA P_CX,X
 .cx_nr:
   LDA P_JOY,X
-  AND #%00000100               ; sinistra
+  AND #%00000100               ; left
   BEQ .cx_nl
   LDA P_CX,X
   SEC
@@ -854,7 +858,7 @@ CURSOR_X:
   STA P_CX,X
 .cx_nl:
   LDA P_JOY,X
-  AND #%00000001               ; su
+  AND #%00000001               ; up
   BEQ .cx_nu
   LDA P_CY,X
   SEC
@@ -888,18 +892,18 @@ CURSOR_X:
   RTS
 
 ; ---------------------------------------------------------------
-; X = mirino che spara (FBTN = pulsante appena premuto)
+; X = cross-hair that fires (FBTN = button just pressed)
 ; ---------------------------------------------------------------
 FIRE_MISSILE:
   STX CURI
   LDA FBTN
-  AND #%00100000               ; tasto 2: base centrale
+  AND #%00100000               ; button 2: centre base
   BEQ .fi_near
   LDA AMMO+1
   BEQ .fi_near
   LDY #$01
   BRA .fi_go
-.fi_near:                      ; base con missili piu' vicina al mirino
+.fi_near:                      ; base with missiles nearest to the cross-hair
   LDA #$FF
   STA T2
   STA T3
@@ -927,7 +931,7 @@ FIRE_MISSILE:
   LDA T3
   CMP #$FF
   BNE .fi_have
-  LDY CURI                     ; nessun missile disponibile: click
+  LDY CURI                     ; no missile available: click
   LDA #W_EMPTY
   STA SMT1
   LDA P_CX,Y
@@ -964,12 +968,12 @@ FIRE_MISSILE:
   STA AMMO,Y
   LDA #$01
   STA AM_DIRTY
-  LDY T4                       ; fischio: laterale (sx / dx) o centrale (piu' acuto)
+  LDY T4                       ; whistle: side (left / right) or centre (higher)
   LDX BASE_PAN,Y
   LDA BASE_WH,Y
   CMP #W_FIRE_SIDE
   BNE .fi_snd
-  LDY CURI                     ; giocatore 2: sibilo laterale diverso
+  LDY CURI                     ; player 2: different side hiss
   BEQ .fi_snd
   LDA #W_FIRE_P2
 .fi_snd:
@@ -980,9 +984,9 @@ FIRE_MISSILE:
 
 
 ; ===============================================================
-;  MISSILI: linee di Bresenham, una struttura per slot
+;  MISSILES: Bresenham lines, one structure per slot
 ; ===============================================================
-; cerca uno slot libero: X = slot (gia' marcato in volo), C=1 se pieno
+; finds a free slot: X = slot (already marked flying), C=1 if full
 ALLOC_SLOT:
   LDX #$00
 .al_l:
@@ -999,7 +1003,7 @@ ALLOC_SLOT:
   CLC
   RTS
 
-; imposta la linea (LX0,LY0) -> (LX1,LY1) nello slot X
+; sets the line (LX0,LY0) -> (LX1,LY1) in slot X
 LINE_SETUP:
   LDA LX0
   STA M_OX,X
@@ -1044,7 +1048,7 @@ LINE_SETUP:
   LDA T0
   CMP T1
   BCC .ls_ymaj
-  LDA #$01                     ; asse maggiore X
+  LDA #$01                     ; major axis X
   STA M_MAJ,X
   LDA T0
   STA M_LEN,X
@@ -1052,7 +1056,7 @@ LINE_SETUP:
   STA M_MIN,X
   BRA .ls_end
 .ls_ymaj:
-  LDA #$00                     ; asse maggiore Y
+  LDA #$00                     ; major axis Y
   STA M_MAJ,X
   LDA T1
   STA M_LEN,X
@@ -1065,7 +1069,7 @@ LINE_SETUP:
   STA M_ERR,X
   RTS
 
-; avanza di un pixel lo slot X
+; moves slot X on by one pixel
 STEP_LINE:
   LDA M_ERR,X
   CLC
@@ -1077,7 +1081,7 @@ STEP_LINE:
   SEC
   SBC M_LEN,X
   STA M_ERR,X
-  LDY #$01                     ; passo anche sull'asse minore
+  LDY #$01                     ; step on the minor axis too
   BRA .st_go
 .st_nov:
   STA M_ERR,X
@@ -1111,7 +1115,7 @@ STEP_LINE:
   DEC M_REM,X
   RTS
 
-; la scia dello slot X (passi fatti) va cancellata a partire dall'origine
+; the trail of slot X (steps done) must be erased starting from the origin
 TO_ERASE:
   LDA M_LEN,X
   SEC
@@ -1154,7 +1158,7 @@ MISSILE_FLY:
   BNE .mf_nocount
   INC NACT_EN
 .mf_nocount:
-  LDA M_ACC,X                  ; passi = parte intera + riporto della frazione
+  LDA M_ACC,X                  ; steps = whole part + carry of the fraction
   CLC
   ADC M_SPF,X
   STA M_ACC,X
@@ -1185,7 +1189,7 @@ MISSILE_FLY:
   DEC NSTEP
   BNE .mf_step
 .mf_done:
-  LDA M_FLG,X                  ; MIRV: a quota M_SPLY la testata si divide
+  LDA M_FLG,X                  ; MIRV: at height M_SPLY the warhead splits
   AND #$01
   BEQ .mf_ret
   LDA M_Y,X
@@ -1227,7 +1231,7 @@ MISSILE_ERASE:
   STA M_ST,X
   RTS
 
-; scelta di un sito bersaglio (preferibilmente vivo): A = indice
+; choice of a target site (alive if possible): A = index
 PICK_SITE:
   LDY #$08
 .ps_try:
@@ -1245,7 +1249,7 @@ PICK_SITE:
   TXA
   RTS
 
-; nuova testata nemica da (LX0,LY0). X = slot, C=1 se non c'e' posto
+; new enemy warhead from (LX0,LY0). X = slot, C=1 if there is no room
 SPAWN_ENEMY:
   JSR ALLOC_SLOT
   BCS .se_ret
@@ -1306,18 +1310,18 @@ SPAWN:
   STA LY0
   JSR SPAWN_ENEMY
   BCS .sp_ret
-  LDA #W_ENEMY                 ; sibilo discendente, dal lato da cui arriva
+  LDA #W_ENEMY                 ; falling hiss, on the side it comes from
   STA SMT1
   LDA LX0
   JSR SFX_WHISTLE_AT
-  LDA WAVE                     ; MIRV dall'ondata 3: una testata su 4
+  LDA WAVE                     ; MIRV from wave 3: one warhead in 4
   CMP #3
   BCC .sp_nom
   JSR NEXT_RND
   LDA RND
   AND #$03
   BNE .sp_nom
-  LDA #$03                     ; bit0 = si dividera', bit1 = testata MIRV
+  LDA #$03                     ; bit0 = will split, bit1 = MIRV warhead
   STA M_FLG,X
   JSR NEXT_RND
   LDA RND
@@ -1330,7 +1334,7 @@ SPAWN:
 .sp_ret:
   RTS
 
-MIRV_SPLIT:                    ; la testata X lancia due figlie dalla sua posizione
+MIRV_SPLIT:                    ; warhead X launches two children from its position
   PHX
   LDA M_X,X
   STA LX0
@@ -1345,7 +1349,7 @@ MIRV_SPLIT:                    ; la testata X lancia due figlie dalla sua posizi
 .ms_l:
   JSR SPAWN_ENEMY
   BCS .ms_n
-  LDA #$04                     ; bit2 = figlia di una MIRV
+  LDA #$04                     ; bit2 = child of a MIRV
   STA M_FLG,X
 .ms_n:
   DEC MCNT
@@ -1353,7 +1357,7 @@ MIRV_SPLIT:                    ; la testata X lancia due figlie dalla sua posizi
   PLX
   RTS
 
-ENEMY_IMPACT:                  ; la testata X e' arrivata a terra
+ENEMY_IMPACT:                  ; warhead X has reached the ground
   PHX
   LDA M_TX,X
   STA EXX
@@ -1368,7 +1372,7 @@ ENEMY_IMPACT:                  ; la testata X e' arrivata a terra
   PLX
   JMP TO_ERASE
 
-PLAYER_DETONATE:               ; il nostro missile X e' arrivato al mirino
+PLAYER_DETONATE:               ; our missile X has reached the cross-hair
   PHX
   LDA M_TX,X
   STA EXX
@@ -1382,20 +1386,20 @@ PLAYER_DETONATE:               ; il nostro missile X e' arrivato al mirino
   PLX
   JMP TO_ERASE
 
-ENEMY_KILLED:                  ; X = slot colpito da un'esplosione
-  LDA M_FLG,X                  ; suono diverso per tipo di nemico
+ENEMY_KILLED:                  ; X = slot hit by an explosion
+  LDA M_FLG,X                  ; different sound for every kind of enemy
   AND #$02
   BEQ .ek_nm
-  LDA #W_KILL_MIRV             ; testata MIRV (portatrice)
+  LDA #W_KILL_MIRV             ; MIRV warhead (carrier)
   BRA .ek_w
 .ek_nm:
   LDA M_FLG,X
   AND #$04
   BEQ .ek_pl
-  LDA #W_KILL_CHILD            ; figlia di una MIRV
+  LDA #W_KILL_CHILD            ; child of a MIRV
   BRA .ek_w
 .ek_pl:
-  LDA #W_KILL_PLAIN            ; testata normale
+  LDA #W_KILL_PLAIN            ; normal warhead
 .ek_w:
   STA SMT1
   LDA M_X,X
@@ -1411,7 +1415,7 @@ ENEMY_KILLED:                  ; X = slot colpito da un'esplosione
   JSR ADD_SCORE
   JMP TO_ERASE
 
-; A = sito colpito
+; A = site hit
 DESTROY_SITE:
   TAX
   LDA T_ALIVE,X
@@ -1431,7 +1435,7 @@ DESTROY_SITE:
 .dss_ret:
   RTS
 
-; punteggio: somma ADLO / ADMID (BCD) a SCORE
+; score: adds ADLO / ADMID (BCD) to SCORE
 ADD_SCORE:
   SED
   CLC
@@ -1470,7 +1474,7 @@ BIN2BCD:                       ; A (0-99) -> A (BCD)
 
 
 ; ===============================================================
-;  COLLISIONI: testata nemica dentro una esplosione
+;  COLLISIONS: enemy warhead inside an explosion
 ; ===============================================================
 COLLIDE:
   LDX #$00
@@ -1486,7 +1490,7 @@ COLLIDE:
   BEQ .co_ne
   LDA X_RAD,Y
   BEQ .co_ne
-  STA T0                       ; raggio
+  STA T0                       ; radius
   LDA M_X,X
   SEC
   SBC X_CX,Y
@@ -1519,7 +1523,7 @@ COLLIDE:
   LDA T0
   LSR A
   CLC
-  ADC T0                       ; 1.5 * raggio (ottagono)
+  ADC T0                       ; 1.5 * radius (octagon)
   CMP T3
   BCC .co_ne
   JSR ENEMY_KILLED
@@ -1536,9 +1540,9 @@ COLLIDE:
 
 
 ; ===============================================================
-;  ESPLOSIONI: blocco 4x4 tile centrato su un angolo della griglia
+;  EXPLOSIONS: 4x4 tile block centred on a corner of the grid
 ; ===============================================================
-NEW_EXPL:                      ; (EXX,EXY) = punto di scoppio
+NEW_EXPL:                      ; (EXX,EXY) = point of the blast
   LDA EXX
   CLC
   ADC #$04
@@ -1602,7 +1606,7 @@ UPDATE_EXPL:
   BNE .ue_n
 .ue_due:
   LDA BUDGET
-  BEQ .ue_n                    ; niente budget: resta in ritardo
+  BEQ .ue_n                    ; no budget: it stays behind
   DEC BUDGET
   JSR EXPL_ADVANCE
 .ue_n:
@@ -1611,7 +1615,7 @@ UPDATE_EXPL:
   BNE .ue_l
   RTS
 
-EXPL_ADVANCE:                  ; X = esplosione
+EXPL_ADVANCE:                  ; X = explosion
   LDA X_STG,X
   CMP #SEQ_LEN
   BCS .ea_end
@@ -1626,7 +1630,7 @@ EXPL_ADVANCE:                  ; X = esplosione
   STA X_TMR,X
   JMP DRAW_EXPL
 .ea_end:
-  LDA #$FF                     ; forma vuota: ripristina lo schermo
+  LDA #$FF                     ; empty shape: restores the screen
   STA SHAPEV
   JSR DRAW_EXPL
   LDA #$00
@@ -1634,7 +1638,7 @@ EXPL_ADVANCE:                  ; X = esplosione
   STA X_RAD,X
   RTS
 
-; ridisegna il blocco 4x4 dell'esplosione X con la forma SHAPEV ($FF = nessuna)
+; redraws the 4x4 block of explosion X with shape SHAPEV ($FF = none)
 DRAW_EXPL:
   LDA X_STG,X
   AND #$03
@@ -1698,7 +1702,7 @@ DRAW_EXPL:
   ADC ER0
   STA CELLR
   JSR CELL_SETUP
-  LDA T0                       ; pattern = copia in RAM | forma
+  LDA T0                       ; pattern = copy in RAM | shape
   STA VREG
   LDA T1
   ORA #$40
@@ -1711,7 +1715,7 @@ DRAW_EXPL:
   INY
   CPY #$08
   BNE .de_p
-  LDA T0                       ; colore: fuoco dove c'e' la forma, altrimenti l'originale
+  LDA T0                       ; colour: fire where the shape is, otherwise the original
   STA VREG
   LDA T1
   ORA #$60
@@ -1729,7 +1733,7 @@ DRAW_EXPL:
   INY
   CPY #$08
   BNE .de_c
-  LDA ECP                      ; prossima cella della forma
+  LDA ECP                      ; next cell of the shape
   CLC
   ADC ESTEP
   STA ECP
@@ -1744,9 +1748,9 @@ DRAW_EXPL:
 
 
 ; ===============================================================
-;  PIXEL (con copia in RAM della bitmap e dei colori)
+;  PIXEL (with a copy of the bitmap and of the colours in RAM)
 ; ===============================================================
-; indirizzo cella/riga: T0 = (x & $F8) | (y & 7), T1 = y / 8
+; cell / line address: T0 = (x & $F8) | (y & 7), T1 = y / 8
 PIX_ADDR:
   LDA PX
   AND #$F8
@@ -1762,7 +1766,7 @@ PIX_ADDR:
   STA T1
   RTS
 
-PLOT_SET:                      ; accende (PX,PY) con colore PCOL
+PLOT_SET:                      ; lights (PX,PY) with colour PCOL
   JSR PIX_ADDR
   LDA PX
   AND #$07
@@ -1801,7 +1805,7 @@ PLOT_SET:                      ; accende (PX,PY) con colore PCOL
   STA VDATA
   RTS
 
-PLOT_CLR:                      ; spegne (PX,PY)
+PLOT_CLR:                      ; clears (PX,PY)
   JSR PIX_ADDR
   LDA PX
   AND #$07
@@ -1830,9 +1834,9 @@ PLOT_CLR:                      ; spegne (PX,PY)
 
 
 ; ===============================================================
-;  CELLE 8x8 (copia in RAM + VRAM)
+;  8x8 CELLS (copy in RAM + VRAM)
 ; ===============================================================
-; da CELLC/CELLR: T0 = col*8, T1 = riga, SPTR = pattern in RAM, PTR2 = colori in RAM
+; from CELLC/CELLR: T0 = col*8, T1 = row, SPTR = pattern in RAM, PTR2 = colours in RAM
 CELL_SETUP:
   LDA CELLC
   ASL A
@@ -1852,7 +1856,7 @@ CELL_SETUP:
   STA PTR2+1
   RTS
 
-; copia la cella (copia in RAM) nella VRAM: richiede CELL_SETUP
+; copies the cell (copy in RAM) into the VRAM: needs CELL_SETUP
 FLUSH_CELL:
   LDA T0
   STA VREG
@@ -1880,7 +1884,7 @@ FLUSH_CELL:
   BNE .fl_c
   RTS
 
-; disegna il tile a PTR (8 pattern + 8 colori) in (CELLC,CELLR); PTR avanza di 16
+; draws the tile at PTR (8 pattern + 8 colour bytes) in (CELLC,CELLR); PTR moves on by 16
 BLIT_CELL:
   JSR CELL_SETUP
   LDY #$00
@@ -1913,7 +1917,7 @@ BLIT_CELL:
 .bl_n2:
   JMP FLUSH_CELL
 
-; A = codice ASCII ($20-$5F), in (CELLC,CELLR) con colore TCOL
+; A = ASCII code ($20-$5F), in (CELLC,CELLR) with colour TCOL
 PUT_CHAR:
   SEC
   SBC #$20
@@ -1946,7 +1950,7 @@ PUT_CHAR:
   BNE .pc_l
   JMP FLUSH_CELL
 
-; A = byte BCD: due cifre, CELLC avanza di 2
+; A = BCD byte: two digits, CELLC moves on by 2
 PUT_BCD:
   PHA
   LSR A
@@ -1963,7 +1967,7 @@ PUT_BCD:
   INC CELLC
   RTS
 
-; record: riga, colonna, colore (fg), caratteri..., 0   (fine lista: riga = $FF)
+; record: row, column, colour (fg), characters..., 0   (end of the list: row = $FF)
 DRAW_TEXT:
   LDY #$00
   LDA (TP),Y
@@ -2003,7 +2007,7 @@ DRAW_TEXT:
 .dt_end:
   RTS
 
-; parole grandi: riga, colonna, n, id lettere... (fine lista: riga = $FF)
+; big words: row, column, n, letter ids... (end of the list: row = $FF)
 DRAW_BIGWORDS:
   LDY #$00
   LDA (TP),Y
@@ -2015,7 +2019,7 @@ DRAW_BIGWORDS:
   STA CELLC
   INY
   LDA (TP),Y
-  STA T7                       ; numero di lettere
+  STA T7                       ; number of letters
   INY
 .bw_l:
   LDA (TP),Y
@@ -2075,7 +2079,7 @@ BIGLET:                        ; A = lettera, in (CELLC,CELLR), 2x2 tile
 
 
 ; ===============================================================
-;  SCHERMO FISSO: terreno, citta', basi, punteggi
+;  FIXED SCREEN: ground, cities, bases, scores
 ; ===============================================================
 DRAW_GROUND:
   LDA #23
@@ -2094,7 +2098,7 @@ DRAW_GROUND:
   BNE .dg_l
   RTS
 
-; X = sito (0-8): disegna intatto o distrutto. Conserva X.
+; X = site (0-8): draws it whole or destroyed. Keeps X.
 DRAW_SITE:
   STX SITEV
   LDA SITE_COL,X
@@ -2171,7 +2175,7 @@ DRAW_SCORE:
   JSR PUT_BCD
   RTS
 
-; missili rimasti sotto ogni base (due cifre sul terreno)
+; missiles left under every base (two digits on the ground)
 DRAW_AMMO:
   LDX #$00
 .da_l:
@@ -2206,7 +2210,7 @@ DRAW_AMMO:
 
 
 ; ===============================================================
-;  SPRITE (mirini) e NMI
+;  SPRITES (cross-hairs) and NMI
 ; ===============================================================
 BUILD_SAT:
   LDX #$00
@@ -2246,10 +2250,10 @@ HIDE_SPRITES:
   STA SAT_BUFFER+4
   RTS
 
-; NMI (vblank): unico punto che scrive la Sprite Attribute Table.
+; NMI (vblank): the only point that writes the Sprite Attribute Table.
 NMI_TASK:
   INC FRAME_CNT
-  LDA VREG                ; leggi stato VDP (azzera F e C e il latch dei byte)
+  LDA VREG                ; read the VDP status (clears F and C and the byte latch)
   LDA #<VDP_SPRITE_ATT_BASE
   STA VREG
   LDA #(VDP_WRITE_VRAM_BIT | >VDP_SPRITE_ATT_BASE)
@@ -2259,22 +2263,22 @@ NMI_TASK:
   LDA SAT_BUFFER,X
   STA VDATA
   INX
-  CPX #9                  ; 2 sprite x 4 byte + Y=$D0 della 3a voce
+  CPX #9                  ; 2 sprites x 4 bytes + Y=$D0 of the 3rd entry
   BNE .copy_sat
-  JSR SND_TICK            ; musica ed effetti sonori
-  RTS                     ; NMI_HANDLER del BIOS rilegge VREG e fa RTI
+  JSR SND_TICK            ; music and sound effects
+  RTS                     ; the BIOS NMI_HANDLER rereads VREG and does RTI
 
-WAIT_FRAME:               ; aspetta il prossimo NMI (1 frame = 1/60 s)
+WAIT_FRAME:               ; waits for the next NMI (1 frame = 1/60 s)
   LDA FRAME_CNT
   CMP LAST_FRAME
   BEQ WAIT_FRAME
   STA LAST_FRAME
   RTS
 
-; spegne l'interrupt del VDP subito dopo un NMI (ne arriva un altro fra ~16 ms)
+; switches the VDP interrupt off just after an NMI (the next one comes in ~16 ms)
 VDP_INT_OFF:
   LDA VINT
-  BEQ .io_ret             ; gia' spento
+  BEQ .io_ret             ; already off
   LDA FRAME_CNT
 .io_wait:
   CMP FRAME_CNT
@@ -2297,7 +2301,7 @@ VDP_INT_ON:
   STA VINT
   RTS
 
-; SAT: 0 = mirino P1, 1 = mirino P2, poi Y=$D0 = fine lista
+; SAT: 0 = cross-hair P1, 1 = cross-hair P2, then Y=$D0 = end of the list
 SAT_BUFFER:    .byte HIDE_Y,$00,$00,$0F
                .byte HIDE_Y,$00,$00,$0B
                .byte $D0
@@ -2306,7 +2310,7 @@ SAT_BUFFER:    .byte HIDE_Y,$00,$00,$0F
 ; ===============================================================
 ;  VDP
 ; ===============================================================
-; riga di inizio in A, numero di righe in X: azzera pattern e colori (nero su nero)
+; first row in A, number of rows in X: clears patterns and colours (black on black)
 CLEAR_ROWS:
   STA T0
   STX T1
@@ -2372,12 +2376,12 @@ CLEAR_SCREEN:
   LDX #24
   JMP CLEAR_ROWS
 
-CLEAR_PLAYFIELD:               ; righe 1-20
+CLEAR_PLAYFIELD:               ; rows 1-20
   LDA #$01
   LDX #20
   JMP CLEAR_ROWS
 
-; name table: tile = posizione (0-255 in ognuno dei 3 terzi) => bitmap piena
+; name table: tile = position (0-255 in each of the 3 thirds) => full bitmap
 INIT_NAME_TABLE:
   LDA #<VDP_NAME_TABLE_BASE
   STA VREG
@@ -2395,7 +2399,7 @@ INIT_NAME_TABLE:
   BNE .in_p
   RTS
 
-LOAD_SPRITES:                  ; pattern degli sprite a $1800
+LOAD_SPRITES:                  ; sprite patterns at $1800
   LDA #$00
   STA VREG
   LDA #(VDP_WRITE_VRAM_BIT | $18)
@@ -2461,21 +2465,21 @@ FILL_:
 ITAB:
    .byte $02,$C6,$0E,$FF       ;INITIALIZE G2 MODE
    .byte $03,$76,$03,$01       ;R0: G2 | R1: 16K, 16x16 spr | R2: name $3800 | R3: color $2000
-                               ;R4: pattern $0000 | R5: SAT $3B00 | R6: sprite pattern $1800 | R7: sfondo nero
+                               ;R4: pattern $0000 | R5: SAT $3B00 | R6: sprite pattern $1800 | R7: black background
 
 
 
 ; ===============================================================
-;  SONORO  -  due AY-3-8910 (sinistro / destro = stereo)
-;  Tutto il suono e' suonato da SND_TICK, chiamata dall'NMI a 60 Hz.
-;  Il main loop non scrive mai sugli AY: lascia solo richieste
-;  (SND_CMD, SFX_WHISTLE, SFX_BOOM), cosi' non ci sono conflitti.
-;  Gli AY si scrivono dagli shadow SH_L / SH_R (registri 0-10).
-;  Canali per chip in gioco: A = fischio (tono), B = rumore
-;  (esplosione), C = botto grave (tono).
+;  SOUND  -  two AY-3-8910 (left / right = stereo)
+;  All the sound is played by SND_TICK, called by the NMI at 60 Hz.
+;  The main loop never writes the AYs: it only leaves requests
+;  (SND_CMD, SFX_WHISTLE, SFX_BOOM), so there are no conflicts.
+;  The AYs are written from the shadows SH_L / SH_R (registers 0-10).
+;  Channels per chip in game: A = whistle (tone), B = noise
+;  (explosion), C = low bang (tone).
 ; ===============================================================
 
-; chiamata una volta da RESET (interrupt VDP ancora spento)
+; called once by RESET (VDP interrupt still off)
 SND_INIT:
   LDA #$A5
   STA SND_RND
@@ -2484,7 +2488,7 @@ SND_INIT:
   STA SND_PH
   JMP SND_GAME_MODE
 
-SND_CLEAR_SH:                   ; tutti i registri shadow a 0
+SND_CLEAR_SH:                   ; all the shadow registers to 0
   LDX #10
   LDA #$00
 .cs_l:
@@ -2494,7 +2498,7 @@ SND_CLEAR_SH:                   ; tutti i registri shadow a 0
   BPL .cs_l
   RTS
 
-; modalita' gioco: silenzio, mixer = tono A + rumore B + tono C
+; game mode: silence, mixer = tone A + noise B + tone C
 SND_GAME_MODE:
   JSR SND_CLEAR_SH
   LDA #$2A
@@ -2513,7 +2517,7 @@ SND_GAME_MODE:
   STA EX_POS+1
   JMP AY_FLUSH
 
-; scrive i registri 0-10 dei due shadow sui due AY
+; writes registers 0-10 of the two shadows to the two AYs
 AY_FLUSH:
   LDX #10
 .af_l:
@@ -2528,7 +2532,7 @@ AY_FLUSH:
   RTS
 
 ; ---------------------------------------------------------------
-; chiamata dall'NMI: A,X,Y salvati qui
+; called by the NMI: A,X,Y saved here
 ; ---------------------------------------------------------------
 SND_TICK:
   PHA
@@ -2545,7 +2549,7 @@ SND_TICK:
   BRA .st_run
 .st_song:
   SEC
-  SBC #CMD_TITLE                ; 0 = titolo, 1 = sconfitta
+  SBC #CMD_TITLE                ; 0 = title, 1 = game over
   JSR SND_START
 .st_run:
   LDA SND_MODE
@@ -2562,16 +2566,16 @@ SND_TICK:
   RTS
 
 ; ---------------------------------------------------------------
-; avvia una canzone: A = 0 titolo, 1 sconfitta
+; starts a song: A = 0 title, 1 game over
 ; ---------------------------------------------------------------
 SND_START:
   ASL A
   ASL A
-  STA SN0                       ; canzone * 4
+  STA SN0                       ; song * 4
   JSR SND_CLEAR_SH
-  LDA #$38                      ; sinistro: 3 toni
+  LDA #$38                      ; left: 3 tones
   STA SH_L+7
-  LDA #$2A                      ; destro: tono A, rumore B (batteria), tono C
+  LDA #$2A                      ; right: tone A, noise B (drums), tone C
   STA SH_R+7
   LDX #$03
 .ss_trk:
@@ -2584,7 +2588,7 @@ SND_START:
   LDA SONGP_HI,Y
   STA TR_PH,X
   LDA #$01
-  STA TR_CT,X                   ; il primo DEC porta a 0 -> legge subito la prima nota
+  STA TR_CT,X                   ; the first DEC brings it to 0 -> reads the first note at once
   STA TR_ACT,X
   LDA #$00
   STA TR_NOTE,X
@@ -2598,7 +2602,7 @@ SND_START:
   RTS
 
 ; ---------------------------------------------------------------
-; legge il prossimo evento della traccia X: .byte nota, durata (frame); $FF = fine
+; reads the next event of track X: .byte note, length (frames); $FF = end
 ; ---------------------------------------------------------------
 MUS_FETCH:
   LDA TR_PL,X
@@ -2609,7 +2613,7 @@ MUS_FETCH:
   LDA (SND_PTR),Y
   CMP #$FF
   BNE .mf_note
-  LDA #$00                      ; fine traccia
+  LDA #$00                      ; end of the track
   STA TR_ACT,X
   STA TR_NOTE,X
   STA TR_VOL,X
@@ -2629,7 +2633,7 @@ MUS_FETCH:
   LDA #$00
   STA TR_AGE,X
   LDA TR_NOTE,X
-  BEQ .mf_vol                   ; pausa: volume 0
+  BEQ .mf_vol                   ; rest: volume 0
   CPX #$03
   BEQ .mf_drum
   LDA V0_TAB,X
@@ -2642,10 +2646,10 @@ MUS_FETCH:
   RTS
 
 ; ---------------------------------------------------------------
-; un frame di musica: avanza le 4 tracce e riempie gli shadow
+; one frame of music: advances the 4 tracks and fills the shadows
 ; ---------------------------------------------------------------
 MUS_TICK:
-  LDX #$02                      ; tracce a tono: 0 melodia, 1 arpeggio, 2 basso
+  LDX #$02                      ; tone tracks: 0 melody, 1 arpeggio, 2 bass
 .mt_trk:
   LDA TR_ACT,X
   BEQ .mt_next
@@ -2666,7 +2670,7 @@ MUS_TICK:
 .mt_next:
   DEX
   BPL .mt_trk
-  LDX #$03                      ; traccia 3: batteria
+  LDX #$03                      ; track 3: drums
   LDA TR_ACT,X
   BEQ .mt_dr_end
   DEC TR_CT,X
@@ -2683,8 +2687,8 @@ MUS_TICK:
   BEQ .mt_dr_end
   DEC TR_VOL,X
 .mt_dr_end:
-  ; ---- melodia: su entrambi i chip, il destro scordato di 1 passo (effetto chorus);
-  ;      vibrato sulle note lunghe e non troppo acute
+  ; ---- melody: on both chips, the right one detuned by 1 step (chorus effect)
+  ;      vibrato on long notes that are not too high
   LDX TR_NOTE
   BEQ .mt_l_off
   LDA TP_LO,X
@@ -2717,7 +2721,7 @@ MUS_TICK:
 .mt_l_v:
   STA SH_L+8
   STA SH_R+8
-  ; ---- arpeggio: solo chip sinistro, canale B
+  ; ---- arpeggio: left chip only, channel B
   LDX TR_NOTE+1
   BEQ .mt_h_off
   LDA TP_LO,X
@@ -2730,7 +2734,7 @@ MUS_TICK:
   LDA #$00
 .mt_h_v:
   STA SH_L+9
-  ; ---- basso: entrambi i chip, canale C
+  ; ---- bass: both chips, channel C
   LDX TR_NOTE+2
   BEQ .mt_b_off
   LDA TP_LO,X
@@ -2746,29 +2750,29 @@ MUS_TICK:
 .mt_b_v:
   STA SH_L+10
   STA SH_R+10
-  ; ---- batteria: chip destro, rumore sul canale B
+  ; ---- drums: right chip, noise on channel B
   LDX TR_NOTE+3
   LDA DRUM_NP,X
   STA SH_R+6
   LDA TR_VOL+3
   STA SH_R+9
-  ; ---- canzone finita?
+  ; ---- song over?
   LDA TR_ACT
   ORA TR_ACT+1
   ORA TR_ACT+2
   ORA TR_ACT+3
   BNE .mt_end
-  JSR SND_GAME_MODE             ; silenzio, SND_BUSY = 0
+  JSR SND_GAME_MODE             ; silence, SND_BUSY = 0
 .mt_end:
   RTS
 
 ; ---------------------------------------------------------------
-; effetti di gioco (un frame, chiamata dall'NMI). Chip 0 = sinistro, 1 = destro.
-;   fischio: id in WH_ID, tabelle WH_*  (canale A)
-;   esplosione: id in EX_ID, tabelle EX_*  (rumore B + botto C)
+; game effects (one frame, called by the NMI). Chip 0 = left, 1 = right.
+;   whistle: id in WH_ID, tables WH_*  (channel A)
+;   explosion: id in EX_ID, tables EX_*  (noise B + bang C)
 ; ---------------------------------------------------------------
 SFX_TICK:
-  LDA SND_RND                   ; LFSR per il crepitio dell'esplosione
+  LDA SND_RND                   ; LFSR for the crackle of the explosion
   ASL A
   BCC .sf_r
   EOR #$1D
@@ -2782,12 +2786,12 @@ SFX_TICK:
   ASL A
   ASL A
   ASL A
-  TAY                           ; Y = chip * 16 = offset dello shadow (SH_R = SH_L + 16)
+  TAY                           ; Y = chip * 16 = offset of the shadow (SH_R = SH_L + 16)
   LDA #$00
   STA SH_L+8,Y
   STA SH_L+9,Y
   STA SH_L+10,Y
-  LDA WH_ID,X                   ; ---- fischio
+  LDA WH_ID,X                   ; ---- whistle
   BEQ .sf_nowh
   TAX
   LDA WH_START,X
@@ -2814,7 +2818,7 @@ SFX_TICK:
   LDA #$00
   STA WH_ID,X
 .sf_nowh:
-  LDX SND_T1                    ; ---- esplosione
+  LDX SND_T1                    ; ---- explosion
   LDA EX_ID,X
   BEQ .sf_next
   TAX
@@ -2831,7 +2835,7 @@ SFX_TICK:
   TAX
   LDA EX_NV,X
   BEQ .sf_e1
-  LDA SND_RND                   ; crepitio: -1 a caso
+  LDA SND_RND                   ; crackle: -1 at random
   LSR A
   LDA EX_NV,X
   SBC #$00
@@ -2841,7 +2845,7 @@ SFX_TICK:
   CPY #$00
   BEQ .sf_e2
   CLC
-  ADC #$03                      ; chip destro: rumore leggermente diverso
+  ADC #$03                      ; right chip: slightly different noise
 .sf_e2:
   STA SH_L+6,Y
   LDA EX_VC,X
@@ -2865,8 +2869,8 @@ SFX_TICK:
   RTS
 
 ; ---------------------------------------------------------------
-; richieste dal main loop (conservano A, X, Y)
-;   pan: X = 0 sinistro, 1 destro, 2 entrambi
+; requests from the main loop (they keep A, X, Y)
+;   pan: X = 0 left, 1 right, 2 both
 ; ---------------------------------------------------------------
 PAN_OF_X:                       ; A = x (pixel) -> X = pan
   CMP #80
@@ -2882,7 +2886,7 @@ PAN_OF_X:                       ; A = x (pixel) -> X = pan
   LDX #$01
   RTS
 
-SFX_WHISTLE:                    ; A = id fischio (W_*), X = pan
+SFX_WHISTLE:                    ; A = whistle id (W_*), X = pan
   PHA
   PHX
   STA SMT0
@@ -2905,7 +2909,7 @@ SFX_WHISTLE:                    ; A = id fischio (W_*), X = pan
   PLA
   RTS
 
-SFX_WHISTLE_AT:                 ; A = x (pixel), SMT1 = id fischio: pan automatico
+SFX_WHISTLE_AT:                 ; A = x (pixels), SMT1 = whistle id: automatic pan
   PHX
   JSR PAN_OF_X
   LDA SMT1
@@ -2913,11 +2917,11 @@ SFX_WHISTLE_AT:                 ; A = x (pixel), SMT1 = id fischio: pan automati
   PLX
   RTS
 
-SB_SET:                         ; X = chip, SMT0 = id esplosione
+SB_SET:                         ; X = chip, SMT0 = explosion id
   LDA EX_ID,X
   CMP #S_BIG
   BNE .sbs_set
-  LDA SMT0                      ; un botto piccolo non interrompe uno grande
+  LDA SMT0                      ; a small bang does not stop a big one
   CMP #S_BIG
   BNE .sbs_ret
 .sbs_set:
@@ -2946,7 +2950,7 @@ SFX_BOOM:                       ; A = id (S_SMALL / S_BIG), X = pan
   PLA
   RTS
 
-SFX_BOOM_AT:                    ; A = x (pixel), SMT1 = id esplosione
+SFX_BOOM_AT:                    ; A = x (pixels), SMT1 = explosion id
   PHX
   JSR PAN_OF_X
   LDA SMT1
@@ -2955,26 +2959,26 @@ SFX_BOOM_AT:                    ; A = x (pixel), SMT1 = id esplosione
   RTS
 
 ; ===============================================================
-;  TABELLE
+;  TABLES
 ; ===============================================================
 BITMASK:    .byte $80,$40,$20,$10,$08,$04,$02,$01
 ZEROS:      .byte $00,$00,$00,$00,$00,$00,$00,$00
-SITE_COL:   .byte 0,5,8,11,14,19,22,25,28        ; colonna iniziale di ogni sito
-SITE_X:     .byte 16,48,72,96,128,160,184,208,240 ; centro (pixel)
-SITE_BASE:  .byte 0,$FF,$FF,$FF,1,$FF,$FF,$FF,2   ; numero base, $FF = citta'
+SITE_COL:   .byte 0,5,8,11,14,19,22,25,28        ; first column of every site
+SITE_X:     .byte 16,48,72,96,128,160,184,208,240 ; centre (pixels)
+SITE_BASE:  .byte 0,$FF,$FF,$FF,1,$FF,$FF,$FF,2   ; base number, $FF = city
 BASE_X:     .byte 16,128,240
-BASE_SPD:   .byte 3,4,3                           ; pixel per frame dei nostri missili
+BASE_SPD:   .byte 3,4,3                           ; pixels per frame of our missiles
 AMMO_COL:   .byte 1,15,29
-BASE_PAN:   .byte 0,2,1                           ; sibilo: sinistra / entrambi / destra
+BASE_PAN:   .byte 0,2,1                           ; hiss: left / both / right
 BASE_WH:    .byte W_FIRE_SIDE,W_FIRE_CENTER,W_FIRE_SIDE
-CUR_COL:    .byte $0F,$0B                         ; mirino P1 bianco, P2 giallo
-FIRE_COL:   .byte $F1,$B1,$91,$B1                 ; colori del fuoco
-MISS_PTS:   .byte $00,$05,$10,$15,$20,$25,$30     ; bonus per missile (BCD) x moltiplicatore
+CUR_COL:    .byte $0F,$0B                         ; cross-hair P1 white, P2 yellow
+FIRE_COL:   .byte $F1,$B1,$91,$B1                 ; colours of the fire
+MISS_PTS:   .byte $00,$05,$10,$15,$20,$25,$30     ; bonus per missile (BCD) x multiplier
 
 ; ===============================================================
-;  DATI GRAFICI (generati)
+;  GRAPHICS DATA (generated)
 ; ===============================================================
-; font 5x7: caratteri ASCII $20-$5F, 8 byte ciascuno (tile del gioco precedente)
+; 5x7 font: ASCII characters $20-$5F, 8 bytes each (tiles of the previous game)
 FONT:
   .byte $00,$00,$00,$00,$00,$00,$00,$00
   .byte $20,$20,$20,$00,$20,$20,$00,$00
@@ -3040,25 +3044,25 @@ FONT:
   .byte $F8,$18,$18,$18,$18,$18,$F8,$00
   .byte $00,$00,$20,$50,$88,$00,$00,$00
   .byte $00,$00,$00,$00,$00,$00,$F8,$00
-; sprite 0: mirino (16x16), centro del mirino = pixel (7,7)
+; sprite 0: cross-hair (16x16), centre of the cross-hair = pixel (7,7)
 CROSS_SPR:
   .byte $00,$01,$01,$01,$01,$01,$00,$7D
   .byte $00,$01,$01,$01,$01,$01,$00,$00
   .byte $00,$00,$00,$00,$00,$00,$00,$7C
   .byte $00,$00,$00,$00,$00,$00,$00,$00
-; citta' intatta: 4 tile (alto-sx, alto-dx, basso-sx, basso-dx), 16 byte l'uno (8 pattern + 8 colori)
+; whole city: 4 tiles (top-left, top-right, bottom-left, bottom-right), 16 bytes each (8 pattern + 8 colour)
 TILES_CITY:
   .byte $00,$00,$00,$02,$02,$33,$37,$7B,$51,$51,$51,$51,$51,$51,$51,$51
   .byte $00,$00,$00,$00,$30,$36,$7A,$7B,$51,$51,$51,$51,$51,$51,$51,$51
   .byte $7B,$5A,$7B,$4A,$7B,$5A,$7B,$FF,$51,$51,$51,$51,$51,$51,$51,$51
   .byte $FE,$D6,$FE,$96,$FE,$D6,$FE,$FF,$51,$51,$51,$51,$51,$51,$51,$51
-; citta' distrutta
+; destroyed city
 TILES_CITY_RUB:
   .byte $00,$00,$00,$00,$00,$00,$00,$00,$61,$61,$61,$61,$61,$61,$61,$61
   .byte $00,$00,$00,$00,$00,$00,$00,$00,$61,$61,$61,$61,$61,$61,$61,$61
   .byte $00,$00,$00,$00,$08,$39,$7D,$FF,$61,$61,$61,$61,$61,$61,$61,$61
   .byte $00,$00,$00,$00,$30,$3A,$BF,$FF,$61,$61,$61,$61,$61,$61,$61,$61
-; base intatta 4x2 tile (riga alta poi riga bassa)
+; whole base 4x2 tiles (upper row then lower row)
 TILES_BASE:
   .byte $00,$00,$00,$01,$03,$07,$0F,$1F,$31,$31,$31,$31,$31,$31,$31,$31
   .byte $3C,$7F,$FE,$FE,$FE,$FE,$FE,$FE,$31,$31,$31,$31,$31,$31,$31,$31
@@ -3068,7 +3072,7 @@ TILES_BASE:
   .byte $FE,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$31,$31,$31,$31,$31,$31,$31,$31
   .byte $7F,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$31,$31,$31,$31,$31,$31,$31,$31
   .byte $FC,$FE,$FF,$FF,$FF,$FF,$FF,$FF,$31,$31,$31,$31,$31,$31,$31,$31
-; base distrutta
+; destroyed base
 TILES_BASE_RUB:
   .byte $00,$00,$00,$00,$00,$00,$00,$00,$61,$61,$61,$61,$61,$61,$61,$61
   .byte $00,$00,$00,$00,$00,$00,$00,$00,$61,$61,$61,$61,$61,$61,$61,$61
@@ -3078,10 +3082,10 @@ TILES_BASE_RUB:
   .byte $00,$00,$00,$00,$00,$94,$B4,$FF,$61,$61,$61,$61,$61,$61,$61,$61
   .byte $00,$00,$00,$00,$00,$02,$63,$FF,$61,$61,$61,$61,$61,$61,$61,$61
   .byte $00,$00,$00,$00,$00,$40,$4C,$FF,$61,$61,$61,$61,$61,$61,$61,$61
-; terreno: pattern vuoto, colore giallo scuro (la prima riga piu' chiara)
+; ground: empty pattern, dark yellow colour (the first line lighter)
 TILE_GROUND:
   .byte $00,$00,$00,$00,$00,$00,$00,$00,$1B,$1A,$1A,$1A,$1A,$1A,$1A,$1A
-; lettere grandi (16x16, 4 tile ciascuna): M I S L E C O A N D
+; big letters (16x16, 4 tiles each): M I S L E C O A N D
 BIGFONT:
   .byte $00,$38,$38,$3E,$3E,$3B,$3B,$3B,$81,$81,$81,$91,$91,$91,$91,$A1
   .byte $00,$38,$38,$F8,$F8,$B8,$B8,$B8,$81,$81,$81,$91,$91,$91,$91,$A1
@@ -3123,7 +3127,7 @@ BIGFONT:
   .byte $00,$E0,$E0,$38,$38,$38,$38,$38,$81,$81,$81,$91,$91,$91,$91,$A1
   .byte $38,$38,$38,$38,$38,$3F,$3F,$00,$A1,$B1,$B1,$B1,$B1,$F1,$F1,$F1
   .byte $38,$38,$38,$38,$38,$E0,$E0,$00,$A1,$B1,$B1,$B1,$B1,$F1,$F1,$F1
-; esplosioni: 8 forme, ognuna 4x4 tile (16 x 8 byte) centrate sull'angolo comune dei 4 tile centrali
+; explosions: 8 shapes, each 4x4 tiles (16 x 8 bytes) centred on the common corner of the 4 central tiles
 EXPL_SHAPES:
   .byte $00,$00,$00,$00,$00,$00,$00,$00
   .byte $00,$00,$00,$00,$00,$00,$00,$00
@@ -3253,14 +3257,14 @@ EXPL_SHAPES:
   .byte $FF,$FF,$FF,$FF,$FF,$FF,$7F,$0F
   .byte $FF,$FF,$FF,$FF,$FF,$FF,$FE,$F0
   .byte $FC,$F8,$F0,$E0,$C0,$80,$00,$00
-; raggio di collisione (pixel) per ogni forma
+; collision radius (pixels) for every shape
 EXPL_RAD:
   .byte $02,$04,$06,$08,$0A,$0C,$0E,$10
-; sequenza delle forme (cresce, tiene, cala)
+; sequence of the shapes (grows, holds, shrinks)
 EXPL_SEQ:
   .byte $00,$01,$02,$03,$04,$05,$06,$07,$07,$07,$06,$05,$04,$03,$02,$01,$00
 SEQ_LEN = 17
-; per ondata: n. testate, max contemporanee, ritardo tra lanci (frame), velocita' (frazione 8 bit di pixel/frame)
+; per wave: number of warheads, max at the same time, delay between launches (frames), speed (8-bit fraction of pixel/frame)
 WAVE_N:
   .byte $0A,$0C,$0E,$10,$12,$14,$16,$18,$1A,$1C,$1E,$1E,$1E,$1E,$1E
 WAVE_MAX:
@@ -3269,7 +3273,7 @@ WAVE_DLY:
   .byte $42,$3E,$3A,$36,$32,$2E,$2A,$26,$22,$1E,$1A,$18,$18,$18,$18
 WAVE_SPF:
   .byte $50,$5E,$6C,$7A,$88,$96,$A4,$B2,$C0,$CE,$DC,$EA,$F0,$F0,$F0
-; ---- periodi AY (1 MHz): TP = 62500 / f.  indice = nota MIDI - 35 (1 = C2 ... 55 = F#6), 0 = pausa
+; ---- AY periods (1 MHz): TP = 62500 / f.  index = MIDI note - 35 (1 = C2 ... 55 = F#6), 0 = rest
 TP_LO:
   .byte $00,$BC,$86,$53,$24,$F6,$CC,$A4
   .byte $7E,$5A,$38,$18,$FA,$DE,$C3,$AA
@@ -3286,11 +3290,11 @@ TP_HI:
   .byte $00,$00,$00,$00,$00,$00,$00,$00
   .byte $00,$00,$00,$00,$00,$00,$00,$00
   .byte $00,$00,$00,$00,$00,$00,$00,$00
-V0_TAB:        .byte 13, 9, 12, 0      ; volume all'attacco della nota (melodia, arpeggio, basso)
-FLOOR_TAB:     .byte 9, 4, 8, 0        ; volume minimo raggiunto dal decadimento
-DECMASK_TAB:   .byte 7, 3, 3, 0        ; il volume cala di 1 quando (eta' AND maschera) = 0
-VIB_TAB:       .byte 0, 1, 1, 0, 0, $FF, $FF, 0   ; vibrato +-1 passo (signed)
-; batteria: 1 cassa, 2 rullante, 3 charleston, 4 piatto
+V0_TAB:        .byte 13, 9, 12, 0      ; volume at the attack of the note (melody, arpeggio, bass)
+FLOOR_TAB:     .byte 9, 4, 8, 0        ; lowest volume reached by the decay
+DECMASK_TAB:   .byte 7, 3, 3, 0        ; the volume drops by 1 when (age AND mask) = 0
+VIB_TAB:       .byte 0, 1, 1, 0, 0, $FF, $FF, 0   ; vibrato +-1 step (signed)
+; drums: 1 kick, 2 snare, 3 hi-hat, 4 cymbal
 DRUM_NP:       .byte 0, 28, 10, 2, 5
 DRUM_V0:       .byte 0, 15, 14, 8, 15
 DRUM_MASK:     .byte 0, 0, 0, 0, 7
@@ -3325,7 +3329,7 @@ LOSE_DRUM:
   .byte 1,28,0,28,1,28,0,28,4,140,255
 SONGP_LO:      .byte <TITLE_LEAD,<TITLE_HARM,<TITLE_BASS,<TITLE_DRUM,<LOSE_LEAD,<LOSE_HARM,<LOSE_BASS,<LOSE_DRUM
 SONGP_HI:      .byte >TITLE_LEAD,>TITLE_HARM,>TITLE_BASS,>TITLE_DRUM,>LOSE_LEAD,>LOSE_HARM,>LOSE_BASS,>LOSE_DRUM
-; fischi (id 1-7): per ogni frame periodo del tono e volume
+; whistles (id 1-7): for every frame tone period and volume
 WH_TL:
   .byte $60,$5C,$58,$54,$51,$4D,$4A,$47,$44,$41,$3E,$3C,$39,$37,$34,$32
   .byte $30,$2E,$2C,$2A,$28,$27,$25,$23,$22,$20,$1F,$1E,$1C,$1B,$39,$36
@@ -3391,7 +3395,7 @@ W_FIRE_P2 = 8
 W_KILL_PLAIN = 9
 W_KILL_CHILD = 10
 W_KILL_MIRV = 11
-; esplosioni: id 1 piccola (20 frame), id 2 grande (62 frame): rumore B + botto grave C
+; explosions: id 1 small (20 frames), id 2 big (62 frames): noise B + low bang C
 EX_NV:
   .byte $0F,$0E,$0D,$0C,$0B,$0A,$09,$08,$07,$06,$05,$04,$03,$03,$02,$02
   .byte $01,$01,$00,$00,$0F,$0F,$0F,$0F,$0E,$0E,$0D,$0D,$0C,$0C,$0C,$0C

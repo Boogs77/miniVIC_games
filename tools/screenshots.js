@@ -1,22 +1,22 @@
 'use strict';
-// screenshots.js - fa girare i giochi nell'emulatore e salva gli screenshot
+// screenshots.js - runs the games in the emulator and saves the screenshots
 //
-//   node tools/screenshots.js              tutti i giochi di screenshots.json
-//   node tools/screenshots.js tank 1vs1    solo quelli indicati
+//   node tools/screenshots.js              all the games in screenshots.json
+//   node tools/screenshots.js tank 1vs1    only the games given
 //
-// Per ogni gioco screenshots.json elenca dei passi:
-//   ["wait", n]               n frame senza toccare niente
-//   ["press", "p1", "fire", n] tiene premuto per n frame, poi rilascia (p1 / p2 / both)
-//   ["mash", n]               per n frame preme il tasto 1 di entrambi ogni mezzo secondo
-//                             (supera titoli con musica e schermate di selezione)
-//   ["play", n]               n frame di gioco con joystick casuali (entrambi i giocatori)
+// For every game screenshots.json lists some steps:
+//   ["wait", n]               n frames without touching anything
+//   ["press", "p1", "fire", n] holds for n frames, then releases (p1 / p2 / both)
+//   ["mash", n]               for n frames presses button 1 of both joysticks every half second
+//                             (gets past title screens with music and selection screens)
+//   ["play", n]               n frames of play with random joysticks (both players)
 //   ["track", n, {target, self, targetOffset, selfOffset, fire}]
-//                             n frame in cui il joystick insegue un oggetto: muove a sinistra /
-//                             destra finche' la X in memoria a "self" raggiunge quella a "target"
-//                             (indirizzi decimali in RAM, es. palla e racchetta); fire = spara
-//   ["shot", "nome"]          salva screenshots/<gioco>_<nome>.png
-// Comandi: up down left right fire fire2 (combinabili con "+", es. "right+fire")
-// Un gioco che non compare nel file usa la sequenza "_default".
+//                             n frames in which the joystick chases an object: it moves left /
+//                             right until the X in memory at "self" reaches the one at "target"
+//                             (decimal RAM addresses, e.g. ball and paddle); fire = shoot
+//   ["shot", "name"]          saves screenshots/<game>_<name>.png
+// Inputs: up down left right fire fire2 (combined with "+", e.g. "right+fire")
+// A game that is not in the file uses the "_default" sequence.
 
 const fs = require('fs');
 const path = require('path');
@@ -32,7 +32,7 @@ function bits(spec) {
   }, 0);
 }
 
-function rng(seed) {                         // generatore deterministico (stessi screenshot a ogni giro)
+function rng(seed) {                         // deterministic generator (same screenshots every run)
   let s = seed >>> 0;
   return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
 }
@@ -66,7 +66,7 @@ function runGame(name, steps, outDir) {
       m.joy = [0, 0];
     }
     else if (cmd === 'track') {
-      // b = { target: indirizzo X da seguire, self: indirizzo X del giocatore, offset, fire }
+      // b = { target: address of the X to follow, self: address of the X of the player, offsets, fire }
       const t = b;
       for (let i = 0; i < a; i++) {
         const want = m.mem[t.target] + (t.targetOffset || 0);

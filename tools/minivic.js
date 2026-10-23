@@ -1,12 +1,12 @@
 'use strict';
-// minivic.js - emulatore minimo del miniVIC per creare gli screenshot dei giochi
+// minivic.js - minimal miniVIC emulator used to take the screenshots of the games
 //
-//   CPU  W65C02S a 1 MHz (istruzioni 65C02, cicli approssimati)
-//   VDP  TMS9918A: Graphics I/II + sprite, NMI al vblank (60 Hz)
-//   VIA  joystick: PORTB $D580 (P2), PORTA $D581 (P1), attivi bassi
-//   AY   le scritture su $D380-$D385 sono ignorate (niente audio)
+//   CPU  W65C02S at 1 MHz (65C02 instructions, approximate cycles)
+//   VDP  TMS9918A: Graphics I/II + sprites, NMI at the vblank (60 Hz)
+//   VIA  joysticks: PORTB $D580 (P2), PORTA $D581 (P1), active low
+//   AY   writes to $D380-$D385 are ignored (no audio)
 //
-// Il gestore NMI del BIOS e' sostituito da uno stub in $FF00:
+// The NMI handler of the BIOS is replaced by a stub at $FF00:
 //   PHA PHX PHY / JSR $0FD0 / LDA $B001 / PLY PLX PLA / RTI
 
 const zlib = require('zlib');
@@ -16,7 +16,7 @@ const CYCLES_PER_FRAME = 16667;           // 1 MHz / 60 Hz
 // ---------------- CPU ----------------
 const C = 0x01, Z = 0x02, I = 0x04, D = 0x08, B = 0x10, U = 0x20, V = 0x40, N = 0x80;
 
-// "opcode mnemonico modo cicli"
+// "opcode mnemonic mode cycles"
 const OPTAB = `
 69 ADC imm 2|65 ADC zp 3|75 ADC zpx 4|6D ADC abs 4|7D ADC abx 4|79 ADC aby 4|61 ADC izx 6|71 ADC izy 5|72 ADC izp 5
 29 AND imm 2|25 AND zp 3|35 AND zpx 4|2D AND abs 4|3D AND abx 4|39 AND aby 4|21 AND izx 6|31 AND izy 5|32 AND izp 5
@@ -52,7 +52,7 @@ for (const e of OPTAB.split(/[|\n]/)) {
   const t = e.trim().split(/\s+/);
   if (t.length === 4) OPS[parseInt(t[0], 16)] = { mn: t[1], mode: t[2], cyc: +t[3] };
 }
-for (let n = 0; n < 8; n++) {                       // istruzioni Rockwell sui bit
+for (let n = 0; n < 8; n++) {                       // Rockwell bit instructions
   OPS[0x07 + n * 16] = { mn: 'RMB', mode: 'zp', cyc: 5, bit: n };
   OPS[0x87 + n * 16] = { mn: 'SMB', mode: 'zp', cyc: 5, bit: n };
   OPS[0x0F + n * 16] = { mn: 'BBR', mode: 'zpr', cyc: 5, bit: n };
@@ -276,7 +276,7 @@ class VDP {
         }
       }
     }
-    // sprite: 4 per riga, il numero piu' basso ha la precedenza
+    // sprites: 4 per line, the lowest number has priority
     const sat = (r[5] & 0x7F) << 7, spg = (r[6] & 7) << 11;
     const big = (r[1] & 2) !== 0, mag = (r[1] & 1) ? 2 : 1;
     const size = (big ? 16 : 8) * mag;
@@ -341,19 +341,19 @@ class VDP {
   }
 }
 
-// ---------------- macchina completa ----------------
+// ---------------- whole machine ----------------
 class MiniVIC {
   constructor(bin, loadAddr = 0x0FD0, start = 0x1000) {
     this.mem = new Uint8Array(0x10000);
     this.mem.set(bin, loadAddr);
-    // stub del gestore NMI del BIOS
+    // stub of the NMI handler of the BIOS
     const stub = [0x48, 0xDA, 0x5A, 0x20, 0xD0, 0x0F, 0xAD, 0x01, 0xB0, 0x7A, 0xFA, 0x68, 0x40];
     this.mem.set(stub, 0xFF00);
-    this.mem[0xFF20] = 0x40;                                   // RTI per IRQ/BRK
+    this.mem[0xFF20] = 0x40;                                   // RTI for IRQ/BRK
     this.mem[0xFFFA] = 0x00; this.mem[0xFFFB] = 0xFF;
     this.mem[0xFFFE] = 0x20; this.mem[0xFFFF] = 0xFF;
     this.vdp = new VDP();
-    this.joy = [0, 0];                                         // bit a 1 = premuto (P1, P2)
+    this.joy = [0, 0];                                         // bit set = pressed (P1, P2)
     this.cpu = new CPU(this);
     this.cpu.pc = start;
     this.frame = 0;
@@ -369,7 +369,7 @@ class MiniVIC {
   write(a, v) {
     if (a === 0xB000) return this.vdp.writeData(v);
     if (a === 0xB001) return this.vdp.writeCtrl(v);
-    if (a >= 0xD380 && a <= 0xD385) return;                    // AY: niente audio
+    if (a >= 0xD380 && a <= 0xD385) return;                    // AY: no audio
     if (a >= 0xD580 && a <= 0xD583) return;                    // VIA: DDR
     if (a < 0x8000) this.mem[a] = v;
   }
@@ -386,7 +386,7 @@ class MiniVIC {
       this.checkNmi();
       if (cpu.bad) throw new Error(`opcode sconosciuto $${cpu.bad.opc.toString(16)} a $${cpu.bad.pc.toString(16)}`);
     }
-    this.vdp.render();                                         // inizio del vblank
+    this.vdp.render();                                         // start of the vblank
     this.vdp.status |= 0x80;
     this.checkNmi();
     this.frame++;
