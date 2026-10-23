@@ -21,6 +21,7 @@ A collection of arcade games written in **65C02 assembly** for the **Boogs77-min
 | `space_invaders.asm` | **Space Invaders** | 1–2 | Taito 1978: 55 invaders that march one at a time, shields that crumble pixel by pixel, three kinds of bombs, mystery saucer and the four-note march. Colour bands of the cabinet overlay. |
 | `warlords.asm` | **Warlords** | 1–2 | Atari 1980: four castles, shields on an L-shaped track, catch and throw the fireball. 1 or 2 players against the computer castles; first to 3 rounds wins. |
 | `defender.asm` | **Defender** | 1 | Williams 1981: a scrolling planet that wraps around, scanner, landers kidnapping humanoids, mutants, bombers, pods, swarmers and baiters; laser, smart bombs, hyperspace. |
+| `radar_scope.asm` | **Radar Scope** | 1–2 | Nintendo 1980: a field in perspective with a blue sky and a curved radar grid, 48 Gamma Raiders that hover forward, dive and drop decoys, and a damage meter that slows down the laser. Players take turns. |
 
 Each source file starts with a header describing controls, rules and technical notes.
 
@@ -147,6 +148,12 @@ Captured with the miniVIC emulator in [`tools`](tools): title screen and gamepla
   <img src="screenshots/defender_game.png" width="45%" />
 </p>
 
+### Radar Scope
+<p align="center">
+  <img src="screenshots/radar_scope_title.png" width="45%" />
+  <img src="screenshots/radar_scope_game.png" width="45%" />
+</p>
+
 ---
 
 ## 🔗 Useful Links & Resources
@@ -164,7 +171,7 @@ Captured with the miniVIC emulator in [`tools`](tools): title screen and gamepla
 
 The games in this repository are **fan-made tributes** to classic arcade games. They were written from scratch in 65C02 assembly for the miniVIC as a **non-commercial, educational and demonstration project**, to show what this home-built hardware can do.
 
-* All titles, characters, artwork, sounds and trademarks of the original games (such as *Asteroids*, *Breakout*, *Centipede*, *Defender*, *Lunar Lander*, *Missile Command*, *Space Invaders* and *Warlords*) belong to their **respective owners**. Their names are used only to identify the games that inspired these versions.
+* All titles, characters, artwork, sounds and trademarks of the original games (such as *Asteroids*, *Breakout*, *Centipede*, *Defender*, *Lunar Lander*, *Missile Command*, *Radar Scope*, *Space Invaders* and *Warlords*) belong to their **respective owners**. Their names are used only to identify the games that inspired these versions.
 * This project is **not affiliated with, endorsed or sponsored by** any of the rights holders, and claims no rights over the original games.
 * No original program code or ROM data has been used: graphics and sounds are new re-creations made to resemble the originals.
 * No commercial use is intended. If you are a rights holder and have any concern, please [open an issue](https://github.com/Boogs77/miniVIC_games/issues) and the material will be reviewed or removed promptly.
