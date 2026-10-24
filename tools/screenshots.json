@@ -7,7 +7,8 @@
   "lunar_lander":    [["wait", 120], ["shot", "title"], ["mash", 130], ["wait", 80], ["shot", "game"]],
   "the_warriors":    [["wait", 120], ["shot", "title"], ["mash", 600], ["play", 600], ["shot", "game"]],
   "breakout":        [["wait", 60], ["shot", "title"], ["press", "p1", "fire"], ["track", 1500, {"target": 147, "self": 157, "targetOffset": 1, "selfOffset": 12, "fire": true}], ["shot", "game"]],
-  "asteroids":       [["wait", 120], ["shot", "title"], ["press", "p1", "fire"], ["wait", 110], ["press", "p1", "right", 9], ["mash", 100], ["press", "p1", "left", 15], ["mash", 70], ["shot", "game"]],
+  "asteroids":       [["wait", 120], ["shot", "title"], ["press", "p1", "fire"], ["wait", 110], ["press", "p1", "right", 9], ["mash", 100], ["press", "p1", "left", 160], ["mash", 70], ["shot", "game"]],
   "defender":        [["wait", 60], ["shot", "title"], ["press", "p1", "fire"], ["wait", 140], ["press", "p1", "right", 50], ["press", "p1", "right+fire", 2], ["shot", "game"]],
-  "moon_cresta":     [["wait", 120], ["shot", "title"], ["press", "p1", "fire"], ["wait", 600], ["press", "p1", "left+fire", 20], ["press", "p1", "fire", 50], ["shot", "game"]]
+  "moon_cresta":     [["wait", 120], ["shot", "title"], ["press", "p1", "fire"], ["wait", 600], ["press", "p1", "left+fire", 20], ["press", "p1", "fire", 50], ["shot", "game"]],
+  "stargate":        [["wait", 60], ["shot", "title"], ["press", "p1", "fire"], ["wait", 150], ["press", "p1", "left", 160], ["wait", 12], ["press", "p1", "fire", 2], ["wait", 3], ["shot", "game"]]
 }
