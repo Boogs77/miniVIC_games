@@ -10,6 +10,8 @@
 ;   - P1 on PORTA ($D581), P2 on PORTB ($D580), same bits:     ;
 ;       bit2/bit3 = rotate, bit4 = forward, bit5 = fire        ;
 ;   - a hit = 1 point, the first to reach WIN_SCORE wins       ;
+;   - title: button 1 = 1 player against the computer (the     ;
+;     computer drives tank 2), button 2 = 2 players            ;
 ;   - START screen and END screen with the winner              ;
 ;   - SOUND (2 x AY-3-8910): The Final Countdown on the        ;
 ;     title, shot, explosion, engine, victory fanfare          ;
@@ -61,6 +63,23 @@ T1                       = $8B
 T2                       = $8C
 T3                       = $8D
 
+; ---------------- zero page: computer player (1 player game) ----------------
+CPU_ON                   = $8E     ; 1 = tank 2 is driven by the computer
+RND                      = $8F     ; 8-bit LFSR
+AI_KEYS                  = $90     ; joystick of the computer in the last frame
+AI_LX                    = $91     ; position in the last frame (stuck check)
+AI_LY                    = $92
+AI_STUCK                 = $93     ; frames spent against a wall
+AI_WT                    = $94     ; way round a wall: frames still turning
+AI_WTMR                  = $95     ; way round a wall: frames still driving
+AI_WTURN                 = $96     ; way round a wall: turn bit (left / right)
+AI_ADX                   = $97     ; distance from P1 along X and Y
+AI_ADY                   = $98
+AI_Q                     = $99     ; side of P1: bit0 = left, bit1 = above
+AI_LINED                 = $9A     ; 1 = P1 is on a line of fire
+AI_TDIR                  = $9B     ; direction wanted
+AI_DIFF                  = $9C     ; (wanted - current direction) AND 7
+
 PORTB_JOY = $d580        ;         |P2|P1|RG|LF|DW|UP (LSB)   joystick 2
 PORTA_JOY = $d581        ;         |P2|P1|RG|LF|DW|UP (LSB)   joystick 1
 DDRB_JOY  = $d582        ;
@@ -111,6 +130,8 @@ EXPL_FRAMES = 60         ; length of the explosion in frames
 HIDE_Y      = $C0        ; off-screen Y (NOT $D0: it would stop the sprite list)
 BTN_MASK    = %00110000  ; buttons accepted for START / CONTINUE
 TILE_GREEN  = $01        ; tile percorribile
+AIM_TOL     = 5          ; computer: pixels off the line of fire still accepted
+STUCK_MAX   = 6          ; computer: frames against a wall before going round it
 
 ; starting positions (point-symmetric: P2 = P1 turned by 180 degrees)
 P1_START_X   = 72
@@ -162,6 +183,7 @@ RESET:
   STA P_SCORE+1
   STA EXPL_TIMER
   STA HUD_DIRTY
+  STA CPU_ON
   JSR HIDE_SPRITES
 
   ; enable the VDP interrupt (R1: 16K + display ON + INT ON = $E6)
@@ -221,6 +243,16 @@ TITLE:
   JSR DRAW_RECORDS
   JSR VDP_INT_ON
   JSR WAIT_FIRE
+  LDA FRAME_CNT                ; the frame of the press seeds the computer
+  ORA #$01
+  STA RND
+  LDA P_JOY                    ; button 1 = against the computer, button 2 = 2 players
+  ORA P_JOY+1
+  AND #%00010000
+  BEQ .t_two
+  LDA #$01
+.t_two:
+  STA CPU_ON
   JMP NEW_GAME
 
 
@@ -238,12 +270,24 @@ NEW_GAME:
   JSR HIDE_SPRITES
   JSR VDP_INT_OFF
   JSR LOAD_GAME_NAME_TABLE     ; labels PLAYER 1 / PLAYER 2 + green field
+  LDA CPU_ON
+  BEQ .ng_hud
+  LDA #<CPU_LABEL              ; "PLAYER 2" -> "CPU"
+  STA PTR
+  LDA #>CPU_LABEL
+  STA PTR+1
+  JSR DRAW_RECORDS
+.ng_hud:
   JSR DRAW_HUD                 ; big scores under the labels
   JSR VDP_INT_ON
   JSR DRAW_ALL
 
 GAME_LOOP:
   JSR READ_JOY
+  LDA CPU_ON
+  BEQ .gl_human
+  JSR CPU_AI                   ; the computer writes the joystick of tank 2
+.gl_human:
   LDA EXPL_TIMER
   BNE .gl_expl
   LDX #0
@@ -306,6 +350,10 @@ RESET_ROUND:
   STA B_ACT
   STA B_ACT+1
   STA EXPL_TIMER
+  STA AI_KEYS
+  STA AI_STUCK
+  STA AI_WT
+  STA AI_WTMR
   RTS
 
 
@@ -320,6 +368,206 @@ READ_JOY:
   EOR #$FF
   STA P_JOY+1
   RTS
+
+
+; ---------------------------------------------------------------
+; computer player: writes the joystick of tank 2 (P_JOY+1)
+; - hunts P1: turns towards him and drives on; when P1 is on a line
+;   of fire (vertical, horizontal or diagonal, within AIM_TOL pixels)
+;   and the tank faces him, it fires after a short random delay
+; - against a wall for STUCK_MAX frames: turns to a random side and
+;   drives on for a while, then hunts again
+; ---------------------------------------------------------------
+CPU_AI:
+  LDA #$00
+  STA P_JOY+1
+  LDA EXPL_TIMER                ; explosion: the game stands still
+  BEQ .ai_go
+  RTS
+.ai_go:
+  LDA RND                       ; next random number
+  ASL A
+  BCC .ai_rnd
+  EOR #$1D
+.ai_rnd:
+  STA RND
+  ; where is P1? distances and side
+  LDX #0
+  LDA P_X
+  SEC
+  SBC P_X+1
+  BCS .ai_dx
+  EOR #$FF
+  INC A
+  INX                           ; P1 on the left
+.ai_dx:
+  STA AI_ADX
+  LDA P_Y
+  SEC
+  SBC P_Y+1
+  BCS .ai_dy
+  EOR #$FF
+  INC A
+  INX
+  INX                           ; P1 above
+.ai_dy:
+  STA AI_ADY
+  STX AI_Q
+  ; line of fire or, if none, the octant towards P1
+  ; X = kind (0 horizontal, 4 vertical, 8 diagonal), Y = 1 if lined up
+  LDY #0
+  LDA AI_ADX
+  CMP #AIM_TOL
+  BCS .ai_k1
+  LDX #4
+  INY
+  BRA .ai_kind
+.ai_k1:
+  LDA AI_ADY
+  CMP #AIM_TOL
+  BCS .ai_k2
+  LDX #0
+  INY
+  BRA .ai_kind
+.ai_k2:
+  LDA AI_ADX                    ; |ADX - ADY| small = diagonal
+  SEC
+  SBC AI_ADY
+  BCS .ai_k3
+  EOR #$FF
+  INC A
+.ai_k3:
+  CMP #(AIM_TOL*2)
+  BCS .ai_k4
+  LDX #8
+  INY
+  BRA .ai_kind
+.ai_k4:
+  LDA AI_ADX                    ; ADX >= 2*ADY: horizontal
+  LSR A
+  CMP AI_ADY
+  BCC .ai_k5
+  LDX #0
+  BRA .ai_kind
+.ai_k5:
+  LDA AI_ADY                    ; ADY >= 2*ADX: vertical
+  LSR A
+  CMP AI_ADX
+  BCC .ai_k6
+  LDX #4
+  BRA .ai_kind
+.ai_k6:
+  LDX #8                        ; otherwise diagonal
+.ai_kind:
+  STY AI_LINED
+  TXA
+  ORA AI_Q
+  TAX
+  LDA AI_DIRS,X
+  STA AI_TDIR
+  SEC
+  SBC P_DIR+1
+  AND #$07
+  STA AI_DIFF
+  ; stuck check: it wanted to drive on but did not move
+  LDA AI_KEYS
+  AND #%00010000
+  BEQ .ai_free
+  LDA P_X+1
+  CMP AI_LX
+  BNE .ai_free
+  LDA P_Y+1
+  CMP AI_LY
+  BNE .ai_free
+  INC AI_STUCK
+  LDA AI_STUCK
+  CMP #STUCK_MAX
+  BCC .ai_pos
+  LDA RND                       ; goes round the wall: random side,
+  AND #%00001100                ; 1-4 turns of 45 degrees, 40-71 frames
+  BNE .ai_side
+  LDA #%00000100
+.ai_side:
+  CMP #%00001100
+  BNE .ai_side2
+  LDA #%00001000
+.ai_side2:
+  STA AI_WTURN
+  LDA RND
+  LSR A
+  LSR A
+  LSR A
+  LSR A
+  AND #$07
+  CLC
+  ADC #4
+  STA AI_WT
+  LDA RND
+  AND #$1F
+  CLC
+  ADC #40
+  STA AI_WTMR
+.ai_free:
+  LDA #$00
+  STA AI_STUCK
+.ai_pos:
+  LDA P_X+1
+  STA AI_LX
+  LDA P_Y+1
+  STA AI_LY
+  ; keys
+  LDA AI_WTMR
+  BEQ .ai_hunt
+  DEC AI_WTMR                   ; going round a wall
+  LDA #%00010000
+  LDX AI_WT
+  BEQ .ai_fire
+  DEC AI_WT
+  ORA AI_WTURN
+  BRA .ai_fire
+.ai_hunt:
+  LDA AI_DIFF
+  BEQ .ai_face
+  CMP #5
+  BCS .ai_ccw
+  LDA #%00001000                ; clockwise
+  BRA .ai_turn
+.ai_ccw:
+  LDA #%00000100                ; anticlockwise
+.ai_turn:
+  LDX AI_DIFF                   ; almost facing P1: drives on while turning
+  CPX #1
+  BEQ .ai_fwd
+  CPX #7
+  BNE .ai_keys
+.ai_fwd:
+  ORA #%00010000
+  BRA .ai_keys
+.ai_face:
+  LDA #%00010000
+.ai_fire:
+  LDX AI_LINED                  ; on the line of fire and facing P1
+  BEQ .ai_keys
+  LDX AI_DIFF
+  BNE .ai_keys
+  TAX
+  LDA RND                       ; reaction time
+  AND #$03
+  BNE .ai_nofire
+  TXA
+  ORA #%00100000
+  BRA .ai_keys
+.ai_nofire:
+  TXA
+.ai_keys:
+  STA AI_KEYS
+  STA P_JOY+1
+  RTS
+
+; direction towards P1 by kind and side (AI_Q: bit0 = left, bit1 = above)
+AI_DIRS:       .byte 2, 6, 2, 6         ; horizontal
+               .byte 4, 4, 0, 0         ; vertical
+               .byte 3, 5, 1, 7         ; diagonal
 
 
 ; ---------------------------------------------------------------
@@ -648,16 +896,31 @@ GAME_OVER:
   LDA #>END_REC
   STA PTR+1
   JSR DRAW_RECORDS
-  LDA WINNER                    ; "PLAYER 1" o "PLAYER 2"
+  LDA CPU_ON                    ; against the computer: "P2" -> "CPU"
+  BEQ .go_who
+  LDA #<CPU_END
+  STA PTR
+  LDA #>CPU_END
+  STA PTR+1
+  JSR DRAW_RECORDS
+.go_who:
+  LDA WINNER                    ; "PLAYER 1", "PLAYER 2" or "CPU"
   BNE .go_p2
   LDA #<BANNER_1
   STA PTR
   LDA #>BANNER_1
   BRA .go_banner
 .go_p2:
+  LDA CPU_ON
+  BNE .go_cpu
   LDA #<BANNER_2
   STA PTR
   LDA #>BANNER_2
+  BRA .go_banner
+.go_cpu:
+  LDA #<BANNER_CPU
+  STA PTR
+  LDA #>BANNER_CPU
 .go_banner:
   STA PTR+1
   JSR DRAW_RECORDS
@@ -1741,14 +2004,23 @@ TITLE_REC:
   .byte 6, 7, 18, $C8, $C9, $CC, $CD, $D4, $D5, $B0, $B1, $A8, $A9, $D0, $D1, $CC, $CD, $D8, $D9, $B0, $B1   ; COUNTDOWN
   .byte 7, 7, 18, $CA, $CB, $CE, $CF, $D6, $D7, $B2, $B3, $AA, $AB, $D2, $D3, $CE, $CF, $DA, $DB, $B2, $B3   ; COUNTDOWN
   .byte 9, 5, 21, $54, $20, $41, $20, $4E, $20, $4B, $20, $20, $20, $42, $20, $41, $20, $54, $20, $54, $20, $4C, $20, $45   ; T A N K   B A T T L E
-  .byte 14, 7, 17, $4C, $45, $46, $54, $2F, $52, $49, $47, $48, $54, $20, $3D, $20, $54, $55, $52, $4E   ; LEFT/RIGHT = TURN
-  .byte 16, 8, 15, $42, $55, $54, $54, $4F, $4E, $20, $31, $20, $3D, $20, $4D, $4F, $56, $45   ; BUTTON 1 = MOVE
-  .byte 18, 8, 15, $42, $55, $54, $54, $4F, $4E, $20, $32, $20, $3D, $20, $46, $49, $52, $45   ; BUTTON 2 = FIRE
+  .byte 13, 7, 17, $4C, $45, $46, $54, $2F, $52, $49, $47, $48, $54, $20, $3D, $20, $54, $55, $52, $4E   ; LEFT/RIGHT = TURN
+  .byte 15, 8, 15, $42, $55, $54, $54, $4F, $4E, $20, $31, $20, $3D, $20, $4D, $4F, $56, $45   ; BUTTON 1 = MOVE
+  .byte 17, 8, 15, $42, $55, $54, $54, $4F, $4E, $20, $32, $20, $3D, $20, $46, $49, $52, $45   ; BUTTON 2 = FIRE
   .byte 11, 5, 22, $46, $49, $52, $53, $54, $20, $54, $4F, $20, WIN_SCORE+$30, $20, $50, $4F, $49, $4E, $54, $53, $20, $57, $49, $4E, $53   ; FIRST TO <WIN_SCORE> POINTS WINS
   .byte $FF
 
 TITLE_PRESS:
-  .byte 20, 6, 19, $50, $52, $45, $53, $53, $20, $46, $49, $52, $45, $20, $54, $4F, $20, $53, $54, $41, $52, $54   ; PRESS FIRE TO START
+  .byte 19, 3, 26, $42, $55, $54, $54, $4F, $4E, $20, $31, $20, $3D, $20, $31, $20, $50, $4C, $41, $59, $45, $52, $20, $56, $53, $20, $43, $50, $55   ; BUTTON 1 = 1 PLAYER VS CPU
+  .byte 21, 3, 20, $42, $55, $54, $54, $4F, $4E, $20, $32, $20, $3D, $20, $32, $20, $50, $4C, $41, $59, $45, $52, $53   ; BUTTON 2 = 2 PLAYERS
+  .byte $FF
+
+CPU_LABEL:
+  .byte 0, 24, 8, $00, $00, $00, $00, $00, $43, $50, $55   ; PLAYER 2 -> CPU
+  .byte $FF
+
+CPU_END:
+  .byte 13, 21, 3, $43, $50, $55   ; P2 -> CPU
   .byte $FF
 
 END_REC:
@@ -1768,6 +2040,11 @@ END_REC:
 BANNER_1:
   .byte 3, 8, 16, $DC, $DD, $C4, $C5, $AC, $AD, $E0, $E1, $B8, $B9, $E4, $E5, $00, $00, $84, $85   ; PLAYER 1
   .byte 4, 8, 16, $DE, $DF, $C6, $C7, $AE, $AF, $E2, $E3, $BA, $BB, $E6, $E7, $00, $00, $86, $87   ; PLAYER 1
+  .byte $FF
+
+BANNER_CPU:
+  .byte 3, 13, 6, $C8, $C9, $DC, $DD, $D4, $D5   ; CPU
+  .byte 4, 13, 6, $CA, $CB, $DE, $DF, $D6, $D7   ; CPU
   .byte $FF
 
 BANNER_2:

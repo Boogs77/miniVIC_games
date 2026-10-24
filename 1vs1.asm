@@ -15,6 +15,8 @@
 ;   - inside the line = 2 points, beyond the arc = 3 points    ;
 ;   - after a basket the ball goes to the opponent             ;
 ;   - the first to reach WIN_SCORE (21) points wins            ;
+;   - title: button 1 = 1 player against the computer (the     ;
+;     computer plays ELIA), button 2 = 2 players               ;
 ;   - SOUND (2 x AY-3-8910): title song, basket scored,        ;
 ;     missed shot, dribbling, applause (basket, block,         ;
 ;     steal); at the end applause + cheers + song              ;
@@ -67,6 +69,8 @@ WINNER                   = $8A
 ARMED                    = $8B
 GO_DELAY                 = $8C
 DRB                      = $8D     ; phase of the dribble
+CPU_ON                   = $8E     ; 1 = ELIA is played by the computer
+AI_HAVE                  = $8F     ; computer: 1 = shooting spot chosen for this possession
 T0                       = $90
 T1                       = $91
 T2                       = $92
@@ -76,6 +80,11 @@ T5                       = $95
 T6                       = $96
 T7                       = $97
 PTR                      = $98     ; 2 bytes
+AI_TX                    = $9A     ; computer: where it goes (centre of the feet)
+AI_TY                    = $9B
+AI_TMR                   = $9C     ; computer: frames left before it shoots anyway
+AI_REACT                 = $9D     ; computer: block, frames left before the jump
+AI_K                     = $9E     ; computer: joystick being built
 
 PORTB_JOY = $d580        ;         |P2|P1|RG|LF|DW|UP (LSB)   joystick 2
 PORTA_JOY = $d581        ;         |P2|P1|RG|LF|DW|UP (LSB)   joystick 1
@@ -110,6 +119,7 @@ FREEZE_FRAMES = 50
 MSG_FRAMES    = 90
 HIDE_Y        = $C0      ; off-screen Y (NOT $D0: it would stop the sprite list)
 BTN_MASK      = %00110000
+AI_STEAL      = 5        ; computer: chance of a steal attempt per frame (out of 256)
 
 D_START_X     = 92       ; starting positions (Davide on the left, Elia on the right)
 D_START_Y     = 118
@@ -218,6 +228,7 @@ RESET:
   STA P_SCORE+1
   STA HUD_DIRTY
   STA FREEZE
+  STA CPU_ON
   LDA #$A5
   STA RND
   JSR HIDE_SPRITES
@@ -266,6 +277,13 @@ TITLE:
   LDA FRAME_CNT                ; the moment you press the button seeds the random generator
   ORA #$01
   STA RND
+  LDA P_JOY                    ; button 1 = against the computer, button 2 = 2 players
+  ORA P_JOY+1
+  AND #%00010000
+  BEQ .ti_two
+  LDA #$01
+.ti_two:
+  STA CPU_ON
   JMP NEW_GAME
 
 
@@ -298,6 +316,10 @@ NEW_GAME:
 
 GAME_LOOP:
   JSR READ_JOY
+  LDA CPU_ON
+  BEQ .gl_human
+  JSR CPU_AI                   ; the computer writes the joystick of ELIA
+.gl_human:
   LDA FREEZE
   BEQ .gl_active
   DEC FREEZE                   ; pause: everything still, only the dribble
@@ -365,6 +387,186 @@ NEXT_RND:                      ; LFSR a 8 bit
 .nr_ok:
   STA RND
   RTS
+
+
+; ---------------------------------------------------------------
+; computer player: writes the joystick of ELIA (P_JOY+1)
+; - attack: walks to a shooting spot chosen at random (paint,
+;   inside the arc, beyond the arc) and shoots there, or anyway
+;   when its time is over
+; - defence: stays between DAVIDE and the right basket, a bit
+;   slower than him; now and then tries a steal when close; when
+;   DAVIDE shoots it jumps after a random reaction time (fast
+;   enough = block)
+; - ball loose or in flight: runs after it
+; ---------------------------------------------------------------
+CPU_AI:
+  LDA #$00
+  STA AI_K
+  LDA FREEZE                    ; pause: stands still, new spot next time
+  BEQ .ai_go
+  STA AI_HAVE
+  STA P_JOY+1
+  RTS
+.ai_go:
+  LDA BSTATE
+  BEQ .ai_held
+  STZ AI_HAVE                   ; ball loose: runs after it
+  CMP #$03
+  BNE .ai_loose
+  JMP .ai_out                   ; in the net
+.ai_loose:
+  LDA B_GXH
+  STA AI_TX
+  LDA B_GYH
+  STA AI_TY
+  JSR AI_GOTO
+  JMP .ai_out
+.ai_held:
+  LDA HOLDER
+  BEQ .ai_defend
+  ; ---- attack ----
+  LDA AI_HAVE
+  BNE .ai_att
+  INC AI_HAVE                   ; new possession: shooting spot and time
+  LDA RND
+  AND #$07
+  TAY
+  LDA SPOT_X,Y
+  STA AI_TX
+  LDA SPOT_Y,Y
+  STA AI_TY
+  LDA RND
+  LSR A
+  LSR A
+  AND #$3F
+  CLC
+  ADC #120
+  STA AI_TMR
+.ai_att:
+  LDA P_JUMP+1                  ; in the air: nothing to do
+  BNE .ai_out
+  DEC AI_TMR
+  BEQ .ai_shoot
+  JSR AI_GOTO
+  LDA AI_K
+  BNE .ai_out                   ; not there yet
+.ai_shoot:
+  LDA #$01                      ; shoots (again at the next frame if refused)
+  STA AI_TMR
+  JSR AI_PRESS
+  BRA .ai_out
+  ; ---- defence ----
+.ai_defend:
+  STZ AI_HAVE
+  LDA P_SHOT                    ; DAVIDE shoots: block after the reaction time
+  BEQ .ai_noshot
+  LDA AI_REACT
+  BNE .ai_react
+  LDA RND
+  AND #$0F
+  CLC
+  ADC #2
+  STA AI_REACT
+.ai_react:
+  CMP #$01
+  BEQ .ai_out                   ; jump already tried
+  DEC AI_REACT
+  LDA AI_REACT
+  CMP #$01
+  BNE .ai_out
+  JSR AI_PRESS
+  BRA .ai_out
+.ai_noshot:
+  STZ AI_REACT
+  LDA P_X                       ; guard spot: on the right of DAVIDE
+  CLC
+  ADC #(8+12)
+  BCS .ai_gmax
+  CMP #230
+  BCC .ai_gx
+.ai_gmax:
+  LDA #230
+.ai_gx:
+  STA AI_TX
+  LDA P_FY
+  STA AI_TY
+  LDA RND                       ; a bit slower than DAVIDE
+  AND #$07
+  BEQ .ai_steal
+  JSR AI_GOTO
+.ai_steal:
+  LDX #$01                      ; close to DAVIDE: steal attempt now and then
+  JSR DIST_OTHER
+  LDA T0
+  CMP #STEAL_DX
+  BCS .ai_out
+  LDA T1
+  CMP #STEAL_DY
+  BCS .ai_out
+  LDA RND
+  CMP #AI_STEAL
+  BCS .ai_out
+  JSR AI_PRESS
+.ai_out:
+  LDA AI_K
+  STA P_JOY+1
+  RTS
+
+; button, only if it gives a rising edge and ELIA can act
+AI_PRESS:
+  LDA P_OLD+1
+  ORA P_COOL+1
+  ORA P_JUMP+1
+  BNE .ap_end
+  LDA AI_K
+  ORA #%00010000
+  STA AI_K
+.ap_end:
+  RTS
+
+; directions towards (AI_TX, AI_TY) for the centre of the feet of ELIA
+; (AI_K stays 0 when it is there)
+AI_GOTO:
+  LDA P_X+1
+  CLC
+  ADC #8
+  SEC
+  SBC AI_TX
+  BCS .ag_r
+  CMP #$FE                      ; on the left of the spot
+  BCS .ag_y
+  LDA #%00001000
+  BRA .ag_x
+.ag_r:
+  CMP #$03                      ; on the right of the spot
+  BCC .ag_y
+  LDA #%00000100
+.ag_x:
+  ORA AI_K
+  STA AI_K
+.ag_y:
+  LDA P_FY+1
+  SEC
+  SBC AI_TY
+  BCS .ag_d
+  CMP #$FF                      ; above the spot
+  BCS .ag_end
+  LDA #%00000010
+  BRA .ag_set
+.ag_d:
+  CMP #$02                      ; below the spot
+  BCC .ag_end
+  LDA #%00000001
+.ag_set:
+  ORA AI_K
+  STA AI_K
+.ag_end:
+  RTS
+
+; shooting spots of ELIA (left basket): 2 in the paint, 3 inside the arc, 3 beyond
+SPOT_X:        .byte 34, 40, 66, 50, 50, 100, 78, 78
+SPOT_Y:        .byte 127, 136, 127, 100, 154, 127, 84, 170
 
 
 ; ---------------------------------------------------------------
@@ -3556,7 +3758,8 @@ TITLE_REC:
   .byte $FF
 
 TITLE_PRESS:
-  .byte 19, 9, 14, $50, $52, $45, $53, $53, $20, $41, $20, $42, $55, $54, $54, $4F, $4E   ; PRESS A BUTTON
+  .byte 17, 3, 26, $42, $55, $54, $54, $4F, $4E, $20, $31, $20, $3D, $20, $31, $20, $50, $4C, $41, $59, $45, $52, $20, $56, $53, $20, $43, $50, $55   ; BUTTON 1 = 1 PLAYER VS CPU
+  .byte 19, 6, 20, $42, $55, $54, $54, $4F, $4E, $20, $32, $20, $3D, $20, $32, $20, $50, $4C, $41, $59, $45, $52, $53   ; BUTTON 2 = 2 PLAYERS
   .byte $FF
 
 END_REC:

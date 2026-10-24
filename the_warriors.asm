@@ -5,6 +5,8 @@
 ;   Base: 1vs1 basket (NMI/vblank + SAT buffer, VDP, joystick) ;
 ;                                                              ;
 ;   - P1 on PORTA $D581, P2 on PORTB $D580                     ;
+;   - title: button 1 = 1 player against the computer (the     ;
+;     computer picks and plays P2), button 2 = 2 players       ;
 ;   - joystick: left/right = walk, UP = jump                   ;
 ;       hold BACK (away from opponent) = block                 ;
 ;   - button 1 = PUNCH, button 2 = KICK                        ;
@@ -79,6 +81,13 @@ VP                       = $B0     ; music voice pointers (3 x 2)
 N0                       = $B6
 MAG                      = $B7     ; 1 = magnified sprites (always on)
 VCNT                     = $B8
+CPU_ON                   = $B9     ; 1 = P2 is played by the computer
+AI_TMR                   = $BA     ; computer: frames before the next choice
+AI_BTN                   = $BB     ; computer: buttons waiting to be pressed
+AI_WALK                  = $BC     ; computer: directions held while it walks
+AI_BLK                   = $BD     ; computer: 1 = it blocks the attack in progress
+AI_OST                   = $BE     ; computer: state of P1 in the last frame
+AI_K                     = $BF     ; computer: joystick being built
 
 ; sound state (RAM)
 MUS_ON                   = $0300
@@ -128,6 +137,8 @@ SP_MAX        = 64
 SPEC_WIN      = 3
 HIDE_Y        = $C0
 BTN_MASK      = %00110000
+AI_BLOCKP     = 150     ; computer: chance of blocking an attack (out of 256)
+AI_WAIT       = 4       ; computer: least frames between two choices (+0-15)
 
 ST_IDLE       = 0
 ST_JUMP       = 1
@@ -234,6 +245,13 @@ TITLE:
   LDA FRAME_CNT
   ORA #$01
   STA RND
+  LDA P_JOY                     ; button 1 = against the computer, button 2 = 2 players
+  ORA P_JOY+1
+  AND #%00010000
+  BEQ .ti_two
+  LDA #$01
+.ti_two:
+  STA CPU_ON
   JMP SELECT
 
 ; ===============================================================
@@ -283,8 +301,14 @@ SELECT:
   JSR READ_JOY
   LDX #0
   JSR SEL_PLAYER
+  LDA CPU_ON
+  BEQ .sl_p2
+  JSR CPU_SELECT                ; the computer picks when P1 is ready
+  BRA .sl_lk
+.sl_p2:
   LDX #1
   JSR SEL_PLAYER
+.sl_lk:
   LDA P_LOCK
   AND P_LOCK+1
   BEQ .sl_nb
@@ -364,6 +388,47 @@ SEL_PLAYER:
   STA P_LOCK,X
   STA P_ST,X
   JSR SEL_REFRESH
+  RTS
+
+; computer: when P1 locks his warrior it picks a different one at
+; random and locks it; when P1 cancels it cancels too
+CPU_SELECT:
+  LDA P_LOCK
+  BEQ .cs_free
+  LDA P_LOCK+1
+  BNE .cs_ret
+  LDA RND                       ; next random number
+  ASL A
+  BCC .cs_r
+  EOR #$1D
+.cs_r:
+  STA RND
+  AND #$07                      ; 0-7 -> 0-4
+  CMP #5
+  BCC .cs_c
+  SBC #3
+.cs_c:
+  CMP P_CHAR
+  BNE .cs_set
+  INC A                         ; not the warrior of P1
+  CMP #5
+  BCC .cs_set
+  LDA #0
+.cs_set:
+  STA P_CHAR+1
+  LDA #1
+  STA P_LOCK+1
+  LDA #ST_WIN
+  STA P_ST+1
+  JMP SEL_REFRESH
+.cs_free:
+  LDA P_LOCK+1
+  BEQ .cs_ret
+  LDA #0
+  STA P_LOCK+1
+  STA P_ST+1
+  JMP SEL_REFRESH
+.cs_ret:
   RTS
 
 ; names, specials and status into NT_BUF (keeps X, T0-T3)
@@ -666,6 +731,12 @@ NEW_ROUND:
   STA P_HP,X
   DEX
   BPL .nr_l
+  STA AI_BTN                    ; A = 0 here
+  STA AI_WALK
+  STA AI_BLK
+  STA AI_OST
+  LDA #30
+  STA AI_TMR
   LDA #72
   STA P_CX
   LDA #184
@@ -699,7 +770,12 @@ GAME_LOOP:
   LDA #0
   STA P_JOY
   STA P_JOY+1
+  BRA .gl_go2
 .gl_go:
+  LDA CPU_ON
+  BEQ .gl_go2
+  JSR CPU_AI                    ; the computer writes the joystick of P2
+.gl_go2:
   LDX #0
   JSR UPDATE_FIGHTER
   LDX #1
@@ -718,6 +794,199 @@ GAME_LOOP:
   JSR DRAW_ALL
   JSR WAIT_FRAME
   JMP GAME_LOOP
+
+; ---------------------------------------------------------------
+; computer player: writes the joystick of P2 (P_JOY+1)
+; - defence: when P1 starts an attack (or a projectile comes) it
+;   decides once whether to block (AI_BLOCKP) and holds back
+; - attack: every AI_WAIT+0-15 frames it chooses: special when the
+;   bar is full (projectiles from afar, the others close), punch or
+;   kick when P1 is in range, otherwise walk towards him, jump
+;   towards him, wait or step back
+; - in the air: a kick when P1 is close
+; ---------------------------------------------------------------
+CPU_AI:
+  STZ AI_K
+  LDA RND                       ; next random number
+  ASL A
+  BCC .ai_r
+  EOR #$1D
+.ai_r:
+  STA RND
+  LDA P_CX                      ; T0 = distance from P1
+  SEC
+  SBC P_CX+1
+  BCS .ai_d
+  EOR #$FF
+  INC A
+.ai_d:
+  STA T0
+  LDA P_FACE+1                  ; T1 = towards P1, T2 = back
+  BNE .ai_fl
+  LDA #%00001000
+  STA T1
+  LDA #%00000100
+  STA T2
+  BRA .ai_st
+.ai_fl:
+  LDA #%00000100
+  STA T1
+  LDA #%00001000
+  STA T2
+.ai_st:
+  ; a new attack of P1: block it or not
+  LDA P_ST
+  CMP AI_OST
+  BEQ .ai_same
+  STA AI_OST
+  STZ AI_BLK
+  CMP #ST_PUNCH
+  BCC .ai_same
+  CMP #(ST_SPEC+1)
+  BCS .ai_same
+  LDA RND
+  CMP #AI_BLOCKP
+  BCS .ai_same
+  INC AI_BLK
+.ai_same:
+  LDA P_ST+1
+  CMP #ST_JUMP
+  BNE .ai_nj
+  LDA P_ATK+1                   ; in the air: kick when close
+  BNE .ai_x0
+  LDA T0
+  CMP #36
+  BCS .ai_x0
+  LDA #%00100000
+  STA AI_BTN
+  JMP .ai_btn
+.ai_x0:
+  JMP .ai_out
+.ai_nj:
+  CMP #ST_IDLE
+  BNE .ai_x0                    ; attacking or hit: nothing to do
+  LDA AI_BLK                    ; block the attack of P1
+  BEQ .ai_proj
+  LDA AI_OST
+  CMP #ST_PUNCH
+  BCC .ai_proj
+  CMP #(ST_SPEC+1)
+  BCS .ai_proj
+  BRA .ai_back
+.ai_proj:
+  LDA PR_ON                     ; projectile of P1 getting close
+  BEQ .ai_think
+  LDA PR_X
+  SEC
+  SBC P_CX+1
+  BCS .ai_pd
+  EOR #$FF
+  INC A
+.ai_pd:
+  CMP #60
+  BCS .ai_think
+  LDA AI_BLK
+  BNE .ai_back
+  LDA RND                       ; block or jump over it, once
+  CMP #AI_BLOCKP
+  BCS .ai_think
+  INC AI_BLK
+.ai_back:
+  LDA T2
+  STA AI_K
+  JMP .ai_out
+.ai_think:
+  DEC AI_TMR
+  BNE .ai_walk
+  LDA RND
+  AND #$0F
+  CLC
+  ADC #AI_WAIT
+  STA AI_TMR
+  LDA P_SP+1                    ; special bar full
+  CMP #SP_MAX
+  BCC .ai_norm
+  LDY P_CHAR+1
+  LDA SP_TYPE,Y
+  BEQ .ai_spec                  ; projectile: from any distance
+  LDA T0
+  CMP #48
+  BCS .ai_norm
+.ai_spec:
+  LDA #BTN_MASK
+  STA AI_BTN
+  BRA .ai_btn
+.ai_norm:
+  LDA T0
+  CMP #34
+  BCS .ai_far
+  LDA RND                       ; in range: punch or kick
+  AND #%01000000
+  BEQ .ai_kick
+  LDA #%00010000
+  BRA .ai_hit
+.ai_far:
+  CMP #40
+  BCS .ai_move
+.ai_kick:
+  LDA #%00100000
+.ai_hit:
+  STA AI_BTN
+  BRA .ai_btn
+.ai_move:
+  LDA RND                       ; out of range: how to move
+  AND #$07
+  BEQ .ai_jump
+  CMP #$01
+  BEQ .ai_wait
+  CMP #$02
+  BEQ .ai_retr
+  LDA T1                        ; walk towards P1
+  BRA .ai_mset
+.ai_jump:
+  LDA T1
+  ORA #%00000001
+  BRA .ai_mset
+.ai_wait:
+  LDA #0
+  BRA .ai_mset
+.ai_retr:
+  LDA T2
+.ai_mset:
+  STA AI_WALK
+.ai_walk:
+  LDA AI_WALK                   ; keeps moving, but stops once in range
+  STA AI_K
+  AND #%00000001
+  BEQ .ai_wk
+  LDA AI_WALK                   ; jump: only once
+  AND #%00001100
+  STA AI_WALK
+  BRA .ai_btn
+.ai_wk:
+  LDA T0
+  CMP #34
+  BCS .ai_btn
+  LDA AI_WALK
+  AND T1
+  BEQ .ai_btn
+  STZ AI_K
+  STZ AI_WALK
+.ai_btn:
+  LDA AI_BTN                    ; buttons: only on a rising edge
+  BEQ .ai_out
+  LDA P_OLD+1
+  ORA P_BUF+1
+  BNE .ai_out
+  LDA AI_K
+  AND #%00001100                ; no jump in the same frame
+  ORA AI_BTN
+  STA AI_K
+  STZ AI_BTN
+.ai_out:
+  LDA AI_K
+  STA P_JOY+1
+  RTS
 
 READ_JOY:
   LDA PORTA_JOY
@@ -4317,8 +4586,11 @@ TITLE_REC:
   .byte $45,$43,$49,$41,$4C,$20,$4D,$4F,$56,$45,$12,$01,$1E,$28,$57,$48
   .byte $45,$4E,$20,$54,$48,$45,$20,$53,$50,$45,$43,$49,$41,$4C,$20,$42
   .byte $41,$52,$20,$49,$53,$20,$46,$55,$4C,$4C,$29,$13,$07,$11,$48,$4F
-  .byte $4C,$44,$20,$42,$41,$43,$4B,$20,$3D,$20,$42,$4C,$4F,$43,$4B,$16
-  .byte $09,$0E,$50,$52,$45,$53,$53,$20,$41,$20,$42,$55,$54,$54,$4F,$4E
+  .byte $4C,$44,$20,$42,$41,$43,$4B,$20,$3D,$20,$42,$4C,$4F,$43,$4B
+  .byte $15,$04,$17,$42,$54,$4E,$20,$31,$20,$3D,$20,$31,$20,$50,$4C,$41   ; BTN 1 = 1 PLAYER VS CPU
+  .byte $59,$45,$52,$20,$56,$53,$20,$43,$50,$55
+  .byte $16,$07,$11,$42,$54,$4E,$20,$32,$20,$3D,$20,$32,$20,$50,$4C,$41   ; BTN 2 = 2 PLAYERS
+  .byte $59,$45,$52,$53
   .byte $FF
 
 SEL_REC:
