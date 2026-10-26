@@ -11,5 +11,6 @@
   "defender":        [["wait", 60], ["shot", "title"], ["press", "p1", "fire"], ["wait", 140], ["press", "p1", "right", 50], ["press", "p1", "right+fire", 2], ["shot", "game"]],
   "moon_cresta":     [["wait", 120], ["shot", "title"], ["press", "p1", "fire"], ["wait", 600], ["press", "p1", "left+fire", 20], ["press", "p1", "fire", 50], ["shot", "game"]],
   "stargate":        [["wait", 60], ["shot", "title"], ["press", "p1", "fire"], ["wait", 150], ["press", "p1", "left", 160], ["wait", 12], ["press", "p1", "fire", 2], ["wait", 3], ["shot", "game"]],
+  "quantum":         [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 110], ["press", "p1", "right", 22], ["press", "p1", "down+right", 12], ["press", "p1", "down", 18], ["press", "p1", "down+left", 12], ["press", "p1", "left", 30], ["press", "p1", "up+left", 10], ["press", "p1", "up", 12], ["shot", "game"]],
   "gravitar":        [["wait", 60], ["shot", "title"], ["press", "p1", "fire"], ["wait", 120], ["press", "p1", "left", 11], ["press", "p1", "up", 55], ["wait", 40], ["press", "p1", "right", 9], ["press", "p1", "fire", 2], ["wait", 4], ["shot", "game"]]
 }
