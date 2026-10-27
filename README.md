@@ -27,6 +27,7 @@ A collection of arcade games written in **65C02 assembly** for the **Boogs77-min
 | `stargate.asm` | **Stargate** | 1–2 | Williams 1981, the sequel to Defender: the Stargate that jumps to the humanoid in danger (or warps 3 waves ahead with 4 humanoids on board), Inviso cloaking, several humanoids carried at once, Firebombers, Yllabian Space Guppies, Dynamos, Phreds and Big Reds, plus the Yllabian Dogfight and Firebomber Showdown waves. Players take turns. |
 | `gravitar.asm` | **Gravitar** | 1–2 | Atari 1982: fly from planet to planet of 3 solar systems while the death star pulls the ship in, blast the bunkers, pull up fuel cells with the tractor beam, raise the shield, fight the alien saucer in deep space and blow up the reactor of the red planet before the clock runs out. Then the universe changes: negative gravity, invisible landscape, both. Players take turns. |
 | `quantum.asm` | **Quantum** | 1–2 | Atari 1982: guide your probe with inertia like a trackball to draw loops around particles and destroy them. Multiple particles in one loop multiply the score. Progressively harder waves with nuclei that release positrons, splitters that divide and pulsars that hunt. Players take turns. |
+| `joust.asm` | **Joust** | 1–2 | Williams 1982: a knight on a flying ostrich, and a second one on a stork with both players at the same time. Flap to climb: the higher lance wins. Bounders, Hunters and Shadow Lords leave eggs to pick up before they hatch, the pterodactyl must be hit in the beak, the hand of the troll grabs who flies low over the lava and the bridge burns away. Survival, Team, Gladiator and Egg waves. |
 
 Each source file starts with a header describing controls, rules and technical notes.
 
@@ -190,6 +191,12 @@ Captured with the miniVIC emulator in [`tools`](tools): title screen and gamepla
   <img src="screenshots/quantum_game.png" width="45%" />
 </p>
 
+### Joust
+<p align="center">
+  <img src="screenshots/joust_title.png" width="45%" />
+  <img src="screenshots/joust_game.png" width="45%" />
+</p>
+
 ---
 
 ## 🔗 Useful Links & Resources
@@ -207,7 +214,7 @@ Captured with the miniVIC emulator in [`tools`](tools): title screen and gamepla
 
 The games in this repository are **fan-made tributes** to classic arcade games. They were written from scratch in 65C02 assembly for the miniVIC as a **non-commercial, educational and demonstration project**, to show what this home-built hardware can do.
 
-* All titles, characters, artwork, sounds and trademarks of the original games (such as *Asteroids*, *Breakout*, *Centipede*, *Defender*, *Gravitar*, *Lunar Lander*, *Missile Command*, *Moon Cresta*, *Quantum*, *Radar Scope*, *Space Firebird*, *Space Invaders*, *Stargate* and *Warlords*) belong to their **respective owners**. Their names are used only to identify the games that inspired these versions.
+* All titles, characters, artwork, sounds and trademarks of the original games (such as *Asteroids*, *Breakout*, *Centipede*, *Defender*, *Gravitar*, *Joust*, *Lunar Lander*, *Missile Command*, *Moon Cresta*, *Quantum*, *Radar Scope*, *Space Firebird*, *Space Invaders*, *Stargate* and *Warlords*) belong to their **respective owners**. Their names are used only to identify the games that inspired these versions.
 * This project is **not affiliated with, endorsed or sponsored by** any of the rights holders, and claims no rights over the original games.
 * No original program code or ROM data has been used: graphics and sounds are new re-creations made to resemble the originals.
 * No commercial use is intended. If you are a rights holder and have any concern, please [open an issue](https://github.com/Boogs77/miniVIC_games/issues) and the material will be reviewed or removed promptly.
