@@ -2475,7 +2475,8 @@ EGG_PHYS:
 ; X = egg: a player that touches it picks it up
 EGG_PICKUP:
   LDA E_GR,X                   ; just dropped: it can be seen falling first
-  BEQ .ek_go
+  CMP #2
+  BCC .ek_go
   DEC E_GR,X
   RTS
 .ek_go:
@@ -2504,10 +2505,14 @@ EGG_PICKUP:
 .ek_y:
   CMP #13
   BCS .ek_n
+  LDA E_GR,X                   ; dropped on a player: he must leave it first
+  BNE .ek_r
   JMP EGG_TAKE
 .ek_n:
   DEY
   BPL .ek_l
+  STZ E_GR,X                   ; nobody on it: it can be picked up
+.ek_r:
   RTS
 
 ; Y = player, CI = egg: 250, 500, 750, 1000 in a row, +500 in the air
