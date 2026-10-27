@@ -2320,7 +2320,7 @@ SPAWN_EGGWAVE:
   LDA #2
 .ew_t:
   STA E_TY,X
-  LDA #40
+  JSR HATCH_TIME               ; as long as the eggs of the riders
   STA E_T,X
   INX
   CPX T2
@@ -2560,6 +2560,8 @@ EGG_TAKE:
 
 ; X = egg resting: its clock; then it hatches and a buzzard comes for the rider
 EGG_HATCH:
+  LDA WSTATE                   ; the clock waits for the end of the banner
+  BEQ .eh_r
   LDA FRAME_CNT
   AND #$03
   BNE .eh_r
