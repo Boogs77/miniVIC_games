@@ -202,6 +202,7 @@ PF_ON      = $0420
 PF_X1      = $0429       ; left pixel
 PF_X2      = $0432       ; right pixel (included)
 PF_Y       = $043B       ; top pixel
+E_GR       = $0444       ; frames before an egg can be picked up (8 bytes)
 
 ; ---------------- small effects (explosions, sparkles)
 NFX        = 6
@@ -2261,6 +2262,8 @@ SPAWN_EGG:
   BPL .se_l
   RTS
 .se_f:
+  LDA #30
+  STA E_GR,Y
   LDA #1
   STA E_ST,Y
   LDA C_XH,X
@@ -2313,6 +2316,7 @@ SPAWN_EGGWAVE:
   STZ E_VYL,X
   STZ E_VYH,X
   STZ E_PEN,X
+  STZ E_GR,X
   LDA #1
   LDY WAVEN
   CPY #15
@@ -2470,6 +2474,11 @@ EGG_PHYS:
 
 ; X = egg: a player that touches it picks it up
 EGG_PICKUP:
+  LDA E_GR,X                   ; just dropped: it can be seen falling first
+  BEQ .ek_go
+  DEC E_GR,X
+  RTS
+.ek_go:
   LDY #1
 .ek_l:
   LDA C_ST,Y
