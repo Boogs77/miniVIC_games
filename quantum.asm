@@ -81,6 +81,10 @@ CSH         = $59
 GPTR        = $5A      ; 2 bytes: cell of the trail grid
 CAND        = $5E      ; candidate cells checked
 TRIES       = $5F      ; attempts to place a particle
+CAPACT      = $49      ; 1 = a closed loop is being tested (one particle per frame)
+CLP         = $5C      ; snapshot of the loop: first sample
+CTH         = $5D      ;                       last sample
+CAPI        = $B0      ; next particle to test (counts down)
 
 FRAME_CNT   = $60
 LAST_FRAME  = $61
@@ -487,6 +491,7 @@ GAME_LOOP:
   JSR UPDATE_PROBE
   JSR UPDATE_PARTS
   JSR CHECK_HITS
+  JSR CAPTURE_STEP
   JSR UPDATE_EXPL
   JSR WAVE_CHECK
 .gl_draw:
@@ -613,6 +618,7 @@ NEW_PROBE:                     ; in the centre, still, no trail
   STZ PVYH
   STZ PST
   STZ TLL
+  STZ CAPACT
   STZ IDLE
   LDA #$7F
   STA TLH
@@ -1110,12 +1116,31 @@ CLR_CUR:
 ;  crosses the trail an odd number of times.
 ; ===============================================================
 CAPTURE_LOOP:
-  LDA #$FF                     ; ---- box of the loop (pixels)
+  LDA CAPACT                   ; a loop is still being tested
+  BEQ .cl_new
+  RTS
+.cl_new:
+  STZ NCAP                     ; snapshot of the loop; the box and then the
+  STZ CSL                      ; particles are handled one step per frame
+  STZ CSM                      ; by CAPTURE_STEP
+  STZ CSH
+  LDA LOOPS
+  STA CLP
+  LDA TLH
+  STA CTH
+  LDA #(MAXP-1)
+  STA CAPI
+  LDA #$02
+  STA CAPACT
+  RTS
+
+CAP_BOX:                       ; ---- box of the loop (pixels)
+  LDA #$FF
   STA CMIN
   STA RMIN
   STZ CMAX
   STZ RMAX
-  LDX LOOPS
+  LDX CLP
 .cl_bb:
   LDA TL_X,X
   CMP CMIN
@@ -1135,7 +1160,7 @@ CAPTURE_LOOP:
   BCC .cl_b4
   STA RMAX
 .cl_b4:
-  CPX TLH
+  CPX CTH
   BEQ .cl_bd
   INX
   TXA
@@ -1154,31 +1179,42 @@ CAPTURE_LOOP:
   CMP #12
   BCS .cl_go
 .cl_ret:
+  STZ CAPACT
   RTS
 .cl_go:
-  STZ NCAP
-  STZ CSL
-  STZ CSM
-  STZ CSH
-  LDX #(MAXP-1)
-.cl_tp:
+  LDA #$01
+  STA CAPACT
+  RTS
+
+CAPTURE_STEP:                  ; tests the next particle inside the box
+  LDA CAPACT
+  BEQ .cs_ret
+  CMP #$02
+  BNE .cs_n2
+  JMP CAP_BOX                  ; first frame: box of the loop
+.cs_n2:
+  CMP #$03
+  BEQ .cs_fin                  ; last frame: points and explosions
+.cs_run:
+  LDX CAPI
+.cs_tp:
   STZ P_CAP,X
   LDA P_T,X
-  BEQ .cl_tn
+  BEQ .cs_skip
   LDA P_XH,X                   ; inside the box?
   CMP CMIN
-  BCC .cl_tn
+  BCC .cs_skip
   CMP CMAX
-  BCS .cl_tn
+  BCS .cs_skip
   STA T4
   LDA P_YH,X
   CMP RMIN
-  BCC .cl_tn
+  BCC .cs_skip
   CMP RMAX
-  BCS .cl_tn
+  BCS .cs_skip
   STA T5
   JSR INSIDE
-  BCC .cl_tn
+  BCC .cs_one
   LDA #$01                     ; caught
   STA P_CAP,X
   INC NCAP
@@ -1195,13 +1231,23 @@ CAPTURE_LOOP:
   ADC #$00
   STA CSH
   CLD
-.cl_tn:
+.cs_one:                       ; one test per frame
   DEX
-  BPL .cl_tp
-  LDA NCAP
-  BNE .cl_hit
+  STX CAPI
+  BPL .cs_ret
+  LDA #$03                     ; all tested: the next frame ends it
+  STA CAPACT
+.cs_ret:
   RTS
-.cl_hit:
+.cs_skip:
+  DEX
+  BPL .cs_tp
+.cs_fin:
+  STZ CAPACT
+  LDA NCAP
+  BNE CAP_HIT
+  RTS
+CAP_HIT:
   STZ PTS_L                    ; points x number caught (up to 4)
   STZ PTS_M
   STZ PTS_H
@@ -1248,21 +1294,20 @@ CAPTURE_LOOP:
 ; is (T4, T5) inside the loop LOOPS..TLH? carry set = yes (keeps X)
 INSIDE:
   STZ T3                       ; crossings (bit 0)
-  LDY LOOPS
+  LDY CLP
   LDA TL_Y,Y
   CMP T5
   ROL T2                       ; bit 0 = this sample is below the ray
 .in_l:
-  CPY TLH                      ; next sample (the last one joins the first)
+  CPY CTH                      ; next sample (the last one joins the first)
   BEQ .in_last
   INY
-  INY                          ; sample every other point of the trail
   TYA
   AND #$7F
   TAY
   BRA .in_nx
 .in_last:
-  LDY LOOPS
+  LDY CLP
 .in_nx:
   LDA TL_Y,Y
   CMP T5
@@ -1278,7 +1323,7 @@ INSIDE:
   BCC .in_nc
   INC T3
 .in_nc:
-  CPY LOOPS
+  CPY CLP
   BNE .in_l
   LDA T3
   LSR A                        ; carry = odd
@@ -1289,6 +1334,7 @@ INSIDE:
 ;  PARTICLES
 ; ===============================================================
 CLEAR_PARTS:                   ; no particles, no explosions
+  STZ CAPACT
   LDX #(MAXP-1)
 .cp_l:
   STZ P_T,X
