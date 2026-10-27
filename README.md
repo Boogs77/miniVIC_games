@@ -30,6 +30,7 @@ A collection of arcade games written in **65C02 assembly** for the **Boogs77-min
 | `joust.asm` | **Joust** | 1–2 | Williams 1982: a knight on a flying ostrich, and a second one on a stork with both players at the same time. Flap to climb: the higher lance wins. Bounders, Hunters and Shadow Lords leave eggs to pick up before they hatch, the pterodactyl must be hit in the beak, the hand of the troll grabs who flies low over the lava and the bridge burns away. Survival, Team, Gladiator and Egg waves. |
 | `exerion.asm` | **Exerion** | 1–2 | Jaleco 1983: a fighter with inertia over a planet whose ground rushes towards you in pseudo-3D bands, with the landscape on the horizon moving in parallax. Formations of amoebae, egg-throwing birds, pterosaurs and UFOs come from the horizon, growing as they approach, then dive or swoop away. Unlimited dual shot, rapid single shot that uses charges (won back by hitting with the dual shot), formation bonus doubling up to 10000 and a challenging stage after every stage. Players take turns. |
 | `bubbles.asm` | **Bubbles** | 1–2 | Williams 1982: a soap bubble cleans a kitchen sink, sliding with inertia and growing as it eats crumbs, ants and grease (double near the drain). With eyes and a mouth it bounces sponges and brushes away, even down the drain; razor blades always pop it. Take the broom from the cleaning lady's bristles to swat the roaches that crawl out of the red-flashing drain, then slip into the green drain for a bonus of 1000 times your size before the last dirt is gone and the faucet runs. 99 levels, players take turns. |
+| `times_tables.asm` | **Times Tables** | 1–2 | An original educational game (screen texts in Italian, *TABELLINE*): the times tables from 1 to 10, one question and four answers in a cross, chosen with one push of the joystick. Practice with help, a challenge with a red two-digit countdown like a basketball scoreboard, and a duel against a friend or the computer. Wrong answers show the repeated sum and come back more often; a colour table shows what has been learnt, and every table has a monster to catch and evolve. |
 
 Each source file starts with a header describing controls, rules and technical notes.
 
@@ -209,6 +210,12 @@ Captured with the miniVIC emulator in [`tools`](tools): title screen and gamepla
 <p align="center">
   <img src="screenshots/bubbles_title.png" width="45%" />
   <img src="screenshots/bubbles_game.png" width="45%" />
+</p>
+
+### Times Tables
+<p align="center">
+  <img src="screenshots/times_tables_title.png" width="45%" />
+  <img src="screenshots/times_tables_game.png" width="45%" />
 </p>
 
 ---
