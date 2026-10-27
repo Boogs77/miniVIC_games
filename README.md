@@ -29,6 +29,7 @@ A collection of arcade games written in **65C02 assembly** for the **Boogs77-min
 | `quantum.asm` | **Quantum** | 1–2 | Atari 1982: guide your probe with inertia like a trackball to draw loops around particles and destroy them. Multiple particles in one loop multiply the score. Progressively harder waves with nuclei that release positrons, splitters that divide and pulsars that hunt. Players take turns. |
 | `joust.asm` | **Joust** | 1–2 | Williams 1982: a knight on a flying ostrich, and a second one on a stork with both players at the same time. Flap to climb: the higher lance wins. Bounders, Hunters and Shadow Lords leave eggs to pick up before they hatch, the pterodactyl must be hit in the beak, the hand of the troll grabs who flies low over the lava and the bridge burns away. Survival, Team, Gladiator and Egg waves. |
 | `exerion.asm` | **Exerion** | 1–2 | Jaleco 1983: a fighter with inertia over a planet whose ground rushes towards you in pseudo-3D bands, with the landscape on the horizon moving in parallax. Formations of amoebae, egg-throwing birds, pterosaurs and UFOs come from the horizon, growing as they approach, then dive or swoop away. Unlimited dual shot, rapid single shot that uses charges (won back by hitting with the dual shot), formation bonus doubling up to 10000 and a challenging stage after every stage. Players take turns. |
+| `bubbles.asm` | **Bubbles** | 1–2 | Williams 1982: a soap bubble cleans a kitchen sink, sliding with inertia and growing as it eats crumbs, ants and grease (double near the drain). With eyes and a mouth it bounces sponges and brushes away, even down the drain; razor blades always pop it. Take the broom from the cleaning lady's bristles to swat the roaches that crawl out of the red-flashing drain, then slip into the green drain for a bonus of 1000 times your size before the last dirt is gone and the faucet runs. 99 levels, players take turns. |
 
 Each source file starts with a header describing controls, rules and technical notes.
 
@@ -204,6 +205,12 @@ Captured with the miniVIC emulator in [`tools`](tools): title screen and gamepla
   <img src="screenshots/exerion_game.png" width="45%" />
 </p>
 
+### Bubbles
+<p align="center">
+  <img src="screenshots/bubbles_title.png" width="45%" />
+  <img src="screenshots/bubbles_game.png" width="45%" />
+</p>
+
 ---
 
 ## 🔗 Useful Links & Resources
@@ -221,7 +228,7 @@ Captured with the miniVIC emulator in [`tools`](tools): title screen and gamepla
 
 The games in this repository are **fan-made tributes** to classic arcade games. They were written from scratch in 65C02 assembly for the miniVIC as a **non-commercial, educational and demonstration project**, to show what this home-built hardware can do.
 
-* All titles, characters, artwork, sounds and trademarks of the original games (such as *Asteroids*, *Breakout*, *Centipede*, *Defender*, *Exerion*, *Gravitar*, *Joust*, *Lunar Lander*, *Missile Command*, *Moon Cresta*, *Quantum*, *Radar Scope*, *Space Firebird*, *Space Invaders*, *Stargate* and *Warlords*) belong to their **respective owners**. Their names are used only to identify the games that inspired these versions.
+* All titles, characters, artwork, sounds and trademarks of the original games (such as *Asteroids*, *Breakout*, *Bubbles*, *Centipede*, *Defender*, *Exerion*, *Gravitar*, *Joust*, *Lunar Lander*, *Missile Command*, *Moon Cresta*, *Quantum*, *Radar Scope*, *Space Firebird*, *Space Invaders*, *Stargate* and *Warlords*) belong to their **respective owners**. Their names are used only to identify the games that inspired these versions.
 * This project is **not affiliated with, endorsed or sponsored by** any of the rights holders, and claims no rights over the original games.
 * No original program code or ROM data has been used: graphics and sounds are new re-creations made to resemble the originals.
 * No commercial use is intended. If you are a rights holder and have any concern, please [open an issue](https://github.com/Boogs77/miniVIC_games/issues) and the material will be reviewed or removed promptly.
