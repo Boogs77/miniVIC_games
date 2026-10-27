@@ -5,18 +5,20 @@
 ;   Base: moon cresta (VDP, NMI + trampoline $0FD0, AY engine, ;
 ;   2 players taking turns) and lunar lander (8.8 inertia)     ;
 ;                                                              ;
-;   - the fighter flies over a planet: the ground rushes       ;
-;     towards you in bands (their colours are rewritten every  ;
-;     frame, line by line) and the landscape on the horizon    ;
-;     moves the other way when you steer (parallax)            ;
-;   - joystick = 8 directions with inertia; button 1 = DUAL    ;
+;   - the fighter flies over a planet: black sky above, the    ;
+;     ground below rushes towards you in bands (their colours  ;
+;     are rewritten every frame, line by line) and the hills   ;
+;     on the horizon move the other way when you steer         ;
+;   - joystick = 8 directions with inertia, all over the       ;
+;     screen; button 1 = DUAL                                  ;
 ;     shot (unlimited, one pair at a time), button 2 (hold) =  ;
 ;     SINGLE rapid fire: every shot uses one CHARGE; every     ;
 ;     enemy hit by the dual shot gives one charge back         ;
 ;   - 4 landscapes (mountains, grassland, future city, ruins), ;
 ;     each with its enemies coming from the horizon in 5       ;
-;     formations of 8: amoebae 100, birds 150 (they throw      ;
-;     eggs), pterosaurs 200, UFOs 300. Destroy a whole         ;
+;     formations of 8 that close in a ring around the fighter, ;
+;     turn round it and dive at it: crosses 100, birds 150     ;
+;     (they throw eggs), jets 200, UFOs 300. Destroy a whole   ;
 ;     formation for the BONUS: 200, doubled every time up to   ;
 ;     10000; every shot that misses halves it                  ;
 ;   - after every stage the CHALLENGING STAGE: 40 aliens,      ;
@@ -94,6 +96,10 @@ WAITF       = $94
 BANT        = $95      ; frames of the bonus message
 HROW        = $97      ; horizon: row still to draw (0 = none)
 HBUF        = $98      ; 8 bytes: the tiles of one period of the skyline
+RCX         = $A0      ; centre of the rings of the enemies (follows the fighter)
+RCY         = $A1
+NDIVE       = $A2      ; enemies diving in the last frame
+NDC         = $A3      ; enemies diving, counted in this frame
 
 FRAME_CNT   = $60
 LAST_FRAME  = $61
@@ -166,16 +172,21 @@ E_Y        = $0360
 E_VXL      = $0370       ; dive: horizontal speed 8.8 signed
 E_VXH      = $0380
 E_T        = $0390       ; waiting: frames; flying: frames before it fires
-E_PH       = $03A0       ; phase of the sway
-E_W        = $03B0       ; phase step every frame
-E_CX       = $03C0       ; centre of the sway
-E_AMP      = $03D0       ; sway: 0, 64, 128 (offset in SINT)
+E_PH       = $03A0       ; angle of its place in the ring
+E_W        = $03B0       ; angle step every frame (signed)
+E_CX       = $03C0       ; where it appears on the horizon
+E_AMP      = $03D0       ; ring: 64 = 48 x 24 pixels, 128 = 72 x 48 (offset in SINT)
 E_F        = $03E0       ; formation (0-4), $FF = none (the hydra)
-E_VY       = $03F0       ; dive: falling speed (8.8 low byte, high = 2)
+E_VY       = $03F0       ; swoop: 1 = out to the left
+E_VYL      = $0800       ; dive / swoop: vertical speed 8.8 signed
+E_VYH      = $0810
+E_SZ       = $0820       ; size: 0 far, 1 middle, 2 near
+E_C        = $0830       ; approach: age; ring: frames before it leaves; dive: frames left
 
-M_APPROACH = 0           ; from the horizon towards the fighter, swaying
-M_DIVE     = 1           ; straight at the fighter
-M_SWOOP    = 2           ; past the fighter, out at the bottom
+M_APPROACH = 0           ; from the horizon to its place in the ring, growing
+M_DIVE     = 1           ; homing on the fighter
+M_SWOOP    = 2           ; away, out of a side of the screen
+M_RING     = 3           ; turning round the fighter
 
 ; ---------------- shots of the fighter
 NS         = 8
@@ -192,6 +203,8 @@ B_YL       = $0452
 B_Y        = $0458
 B_VXL      = $045E
 B_VXH      = $0464
+B_VYL      = $0840
+B_VYH      = $0846
 
 ; ---------------- explosions
 NX         = 6
@@ -205,17 +218,23 @@ GB         = $0580
 SAT_BUFFER = $0600       ; 32 sprites x 4 + end of list
 
 ; ---------------- parameters ----------------
-SHIP_Y0     = 160        ; the fighter starts here
+SHIP_Y0     = 120        ; the fighter starts here
 SX_MIN      = 12
 SX_MAX      = 244
-SY_MIN      = 120
+SY_MIN      = 24         ; the whole height of the screen
 SY_MAX      = 172
+RCX_MIN     = 80         ; the rings follow the fighter inside the middle of the screen
+RCX_MAX     = 176
+RCY_MIN     = 72
+RCY_MAX     = 128
+APP_T       = 80         ; frames from the horizon to the ring
 ACC         = $1C        ; inertia of the fighter (8.8)
 FRIC        = $0C
 VMAX        = $0240
 VNEG        = $10000-VMAX
-HORIZON_Y   = 64         ; first line of the ground
-ENTER_Y     = 62         ; enemies appear here, far away
+HORIZON_Y   = 96         ; first line of the ground
+ENTER_Y     = 92         ; enemies appear here, far away
+SHOT_TOP    = 12         ; shots that get here missed
 BTN_MASK    = %00110000
 
 PORTB_JOY = $d580        ;         |P2|P1|RG|LF|DW|UP (LSB)   joystick 2
@@ -563,7 +582,7 @@ SET_THEME:
   DEY
   CPY #$FF
   BNE .st_a
-  LDA THEME                    ; skyline: 64 tiles of pattern and colour (tiles 128-191, third 0)
+  LDA THEME                    ; skyline: 96 tiles of pattern and colour (tiles 128-223, third 1)
   ASL A
   ASL A
   TAX
@@ -573,10 +592,10 @@ SET_THEME:
   STA PTR+1
   LDA #$00
   STA T0
-  LDA #($40 | $04)
+  LDA #($40 | $0C)
   STA T1
   STZ T2
-  LDA #$02
+  LDA #$03
   STA T3
   PHX
   JSR VCOPY
@@ -587,10 +606,10 @@ SET_THEME:
   STA PTR+1
   LDA #$00
   STA T0
-  LDA #($40 | $24)
+  LDA #($40 | $2C)
   STA T1
   STZ T2
-  LDA #$02
+  LDA #$03
   STA T3
   JMP VCOPY
 
@@ -758,6 +777,11 @@ SHIP_RESET:
   STZ SVYH
   STZ PST
   STZ FIRECD
+  LDA #128                     ; the rings start round the fighter
+  STA RCX
+  LDA #SHIP_Y0
+  STA RCY
+  STZ NDIVE
   LDA #$FF
   STA JOYP
   RTS
@@ -1029,9 +1053,9 @@ UPDATE_SHOTS:
   SEC
   SBC #6
   STA S_Y,X
-  CMP #(HORIZON_Y-4)
+  CMP #SHOT_TOP
   BCS .uo_n
-  LDA S_ON,X                   ; it reached the horizon: a shot that missed
+  LDA S_ON,X                   ; it reached the top: a shot that missed
   STZ S_ON,X
   CMP #1
   BNE .uo_miss
@@ -1180,7 +1204,7 @@ SEND_FORMATION:
   STA SPAWNT
   RTS
 .sf_ok:
-  LDA STAGE                    ; the path of this formation
+  LDA STAGE                    ; the ring of this formation
   ASL A
   ADC STAGE
   ADC FSENT
@@ -1207,11 +1231,18 @@ SEND_FORMATION:
   STA E_AMP,X
   LDA FP_W,Y
   STA E_W,X
-  LDA CHAL                     ; the aliens of the challenge sway faster
+  LDA CHAL                     ; the aliens of the challenge turn twice as fast
   BEQ .sf_w
-  INC E_W,X
+  ASL E_W,X
 .sf_w:
-  LDA FP_PH,Y
+  LDA CNT                      ; place in the ring: member x 32 + first angle
+  ASL A
+  ASL A
+  ASL A
+  ASL A
+  ASL A
+  CLC
+  ADC FP_PH,Y
   STA E_PH,X
   LDA CNT                      ; waiting: 1 + member x 10 frames
   ASL A
@@ -1288,9 +1319,47 @@ SEND_FORMATION:
 
 
 ; ===============================================================
-;  ENEMIES: from the horizon (small) towards the fighter (big)
+;  ENEMIES: from the horizon (small) to a ring around the fighter
+;  (big); they turn round it, then dive at it or fly away
 ; ===============================================================
 UPDATE_ENEMIES:
+  LDA SX                       ; the centre of the rings follows the fighter, 1 pixel per frame
+  CMP #RCX_MIN
+  BCS .ue_x1
+  LDA #RCX_MIN
+.ue_x1:
+  CMP #(RCX_MAX+1)
+  BCC .ue_x2
+  LDA #RCX_MAX
+.ue_x2:
+  CMP RCX
+  BEQ .ue_y
+  BCS .ue_xi
+  DEC RCX
+  BRA .ue_y
+.ue_xi:
+  INC RCX
+.ue_y:
+  LDA SY
+  CMP #RCY_MIN
+  BCS .ue_y1
+  LDA #RCY_MIN
+.ue_y1:
+  CMP #(RCY_MAX+1)
+  BCC .ue_y2
+  LDA #RCY_MAX
+.ue_y2:
+  CMP RCY
+  BEQ .ue_go
+  BCS .ue_yi
+  DEC RCY
+  BRA .ue_go
+.ue_yi:
+  INC RCY
+.ue_go:
+  LDA NDC                      ; divers of the last frame
+  STA NDIVE
+  STZ NDC
   STZ NACT
   LDX #(NE-1)
 .ue_l:
@@ -1316,37 +1385,88 @@ UPDATE_ENEMIES:
 START_FLY:
   LDA #2
   STA E_ST,X
+  LDA E_CX,X
+  ; fall into FROM_HORIZON
+
+; X = enemy, A = X: it comes again from the horizon, far away
+FROM_HORIZON:
+  STA E_X,X
   STZ E_MODE,X
   LDA #ENTER_Y
   STA E_Y,X
   STZ E_YL,X
   STZ E_XL,X
-  JSR SWAY_X
+  STZ E_C,X
+  STZ E_SZ,X
   JMP FIRE_TIME
 
-; X = enemy: X from the centre and the phase of the sway
-SWAY_X:
+; X = enemy: TX / TY = its place in the ring round RCX / RCY
+RING_XY:
   LDA E_PH,X
   LSR A
   LSR A
-  AND #$3F
+  STA T5                       ; angle 0-63
   CLC
-  ADC E_AMP,X
+  ADC #16                      ; cosine
+  AND #$3F
+  ORA E_AMP,X
   TAY
   LDA SINT,Y
-  BMI .sx_neg
   CLC
-  ADC E_CX,X
-  BCC .sx_s
-  LDA #250
-  BRA .sx_s
-.sx_neg:
+  ADC RCX
+  STA TX
+  LDA E_AMP,X                  ; the height of the ring: the next smaller radius
+  SEC
+  SBC #64
+  ORA T5
+  TAY
+  LDA SINT,Y
   CLC
-  ADC E_CX,X
-  BCS .sx_s
-  LDA #6
-.sx_s:
+  ADC RCY
+  STA TY
+  RTS
+
+; X = enemy, A = shifts: it moves by (TX - X, TY - Y) x 2^A / 256
+SEEK:
+  STA T2
+  LDA TX
+  SEC
+  SBC E_X,X
+  JSR SHL_D
+  CLC
+  LDA E_XL,X
+  ADC T0
+  STA E_XL,X
+  LDA E_X,X
+  ADC T1
   STA E_X,X
+  LDA TY
+  SEC
+  SBC E_Y,X
+  JSR SHL_D
+  CLC
+  LDA E_YL,X
+  ADC T0
+  STA E_YL,X
+  LDA E_Y,X
+  ADC T1
+  STA E_Y,X
+  RTS
+
+; A = difference just made (carry = no borrow): T0 / T1 = it, signed, x 2^T2
+SHL_D:
+  LDY #0
+  BCS .sd_p
+  DEY
+.sd_p:
+  STY T1
+  LDY T2
+.sd_l:
+  ASL A
+  ROL T1
+  DEY
+  BNE .sd_l
+  STA T0
   RTS
 
 ; X = enemy: frames before it fires
@@ -1363,96 +1483,133 @@ FIRE_TIME:
   STA E_T,X
   RTS
 
+; X = enemy: frames it stays in the ring (90-217, every one its own)
+RING_TIME:
+  TXA
+  ASL A
+  ASL A
+  ASL A
+  ASL A
+  ADC RND
+  AND #$7F
+  CLC
+  ADC #90
+  STA E_C,X
+  RTS
+
 ; X = enemy flying
 MOVE_ENEMY:
   LDA E_MODE,X
   CMP #M_DIVE
   BNE .me_ns
+  INC NDC
   JMP DIVE
 .me_ns:
   CMP #M_SWOOP
-  BNE .me_app
+  BNE .me_rg
   JMP SWOOP
-.me_app:                       ; ---- approach: sway and come nearer
-  LDA E_PH,X
+.me_rg:
+  LDA E_PH,X                   ; ---- approach and ring: its place turns round the fighter
   CLC
   ADC E_W,X
   STA E_PH,X
-  JSR SWAY_X
-  LDA E_Y,X
-  LSR A
-  LSR A
-  LSR A
-  TAY
-  LDA DIFF                     ; faster in the later stages
-  ASL A
-  ASL A
-  ASL A
-  ASL A
-  CLC
-  ADC APP_L,Y
-  STA T0
-  LDA APP_H,Y
-  ADC #0
-  STA T1
-  CLC
-  LDA E_YL,X
-  ADC T0
-  STA E_YL,X
-  LDA E_Y,X
-  ADC T1
+  JSR RING_XY
+  LDA E_MODE,X
+  CMP #M_RING
+  BEQ .me_ring
+  LDA E_C,X                    ; ---- approach: nearer and bigger
+  INC A
+  STA E_C,X
+  LDY #2
+  CMP #56
+  BCS .me_sz
+  DEY
+  CMP #24
+  BCS .me_sz
+  DEY
+.me_sz:
+  TYA
+  STA E_SZ,X
+  LDA E_C,X
+  CMP #APP_T
+  BCC .me_ap
+  LDA #M_RING                  ; in the ring
+  STA E_MODE,X
+  JSR RING_TIME
+.me_ap:
+  LDA #3                       ; towards its place: 1/32 of the way, 1/16 when near
+  CPY #2
+  BCC .me_sk
+  LDA #4
+.me_sk:
+  JSR SEEK
+  JMP ENEMY_FIRE
+.me_ring:
+  LDA TX                       ; ---- ring: in its place
+  STA E_X,X
+  LDA TY
   STA E_Y,X
   JSR ENEMY_FIRE
-  LDA E_Y,X                    ; near enough: dive at the fighter or swoop past it
-  CMP #118
-  BCC .me_r
-  LDY E_K,X
+  DEC E_C,X
+  BNE .me_r
+  LDY E_K,X                    ; time to leave the ring
   CPY #4
-  BCS .me_sw                   ; aliens and the hydra never dive
-  LDA RND
+  BCS .me_sw                   ; aliens and the hydra fly away
+  LDA DIFF                     ; at most 1 + difficulty / 2 diving together
+  LSR A
+  CMP NDIVE
+  BCC .me_stay
+  TXA
+  ASL A
+  ASL A
+  ADC FRAME_CNT
+  EOR RND
   AND #$03
   CMP DIVE_P,Y
-  BCS .me_sw
-  LDA #M_DIVE
+  BCC .me_dive
+.me_stay:
+  JMP RING_TIME                ; another turn
+.me_dive:
+  LDA #M_DIVE                  ; ---- dive at the fighter
   STA E_MODE,X
+  LDA #70
+  STA E_C,X
   STZ E_VXL,X
   STZ E_VXH,X
-  LDA DIFF
-  ASL A
-  ASL A
-  ASL A
-  ASL A
-  ASL A
-  STA E_VY,X                   ; falling at 2 + difficulty / 8 pixels per frame
-  LDA RND
-  AND #$01
-  BEQ .me_r
+  STZ E_VYL,X
+  STZ E_VYH,X
   LDA #W_DIVE
   PHX
   LDX #1
   JSR SFX_WHISTLE
   PLX
+.me_r:
   RTS
 .me_sw:
-  LDA #M_SWOOP                 ; it turns out, away from the fighter
+  STZ E_VYL,X                  ; ---- away, out of the nearer side
+  STZ E_VYH,X
+  ; fall into TO_SWOOP
+
+; X = enemy: it flies away from the fighter, out of a side of the screen
+TO_SWOOP:
+  LDA #M_SWOOP
   STA E_MODE,X
   STZ E_VXL,X
   STZ E_VXH,X
   LDA SX
   LDY CHAL
-  BEQ .me_d
+  BEQ .ts_d
   LDA #128                     ; the aliens of the challenge: away from the middle
-.me_d:
+.ts_d:
   CMP E_X,X
   LDA #0
-  BCC .me_dr
+  BCC .ts_dr
   LDA #1
-.me_dr:
+.ts_dr:
   STA E_VY,X
-.me_r:
   RTS
 
-; X = enemy swooping past the fighter: it turns towards one side and leaves the screen there
+; X = enemy flying away: it turns towards one side and leaves the screen there
 SWOOP:
   LDA E_VXL,X
   STA T0
@@ -1498,26 +1655,19 @@ SWOOP:
 .sw_bk:
   JMP ENEMY_BACK
 .sw_y:
-  CLC                          ; still coming nearer, slowly
-  LDA E_YL,X
-  ADC #$90
-  STA E_YL,X
-  LDA E_Y,X
-  ADC #0
-  STA E_Y,X
-  JMP CHECK_OUT
+  JMP MOVE_Y                   ; up or down as it was going
 
-; X = enemy diving at the fighter
+; X = enemy diving: it steers at the fighter on both axes
 DIVE:
-  LDA E_VXL,X                  ; the horizontal speed turns towards the fighter
-  STA T0
-  LDA E_VXH,X
-  STA T1
+  DEC E_C,X                    ; the dive is over: away
+  BNE .dv_go
+  JMP TO_SWOOP
+.dv_go:
   LDA DIFF                     ; step $0C + 4 x difficulty, top speed 1.5 + difficulty / 8
   ASL A
   ASL A
   ADC #$0C
-  STA T2
+  STA T6
   LDA DIFF
   ASL A
   ASL A
@@ -1525,13 +1675,14 @@ DIVE:
   ASL A
   ASL A
   ADC #$80
-  STA T3
-  LDA #$01
-  STA T4
-  LDA SX
-  SEC
-  SBC E_X,X
-  ASL A                        ; carry = the fighter is on the left
+  STA T7
+  LDA E_VXL,X                  ; ---- across
+  STA T0
+  LDA E_VXH,X
+  STA T1
+  JSR DIVE_STEP
+  LDA E_X,X
+  CMP SX                       ; carry = the fighter is on the left
   JSR ACCEL16
   LDA T0
   STA E_VXL,X
@@ -1544,13 +1695,31 @@ DIVE:
   LDA E_X,X
   ADC E_VXH,X
   STA E_X,X
-  CLC                          ; falling at 2 pixels + E_VY / 256
+  LDA E_VYL,X                  ; ---- up and down
+  STA T0
+  LDA E_VYH,X
+  STA T1
+  JSR DIVE_STEP
+  LDA E_Y,X
+  CMP SY                       ; carry = the fighter is above
+  JSR ACCEL16
+  LDA T0
+  STA E_VYL,X
+  LDA T1
+  STA E_VYH,X
+  ; fall into MOVE_Y
+
+; X = enemy: Y += its vertical speed; out at the top or at the bottom?
+MOVE_Y:
+  CLC
   LDA E_YL,X
-  ADC E_VY,X
+  ADC E_VYL,X
   STA E_YL,X
   LDA E_Y,X
-  ADC #2
+  ADC E_VYH,X
   STA E_Y,X
+  CMP #8
+  BCC ENEMY_BACK
   ; fall into CHECK_OUT
 
 ; X = enemy: out at the bottom? It comes back from the horizon (it leaves in the challenge)
@@ -1560,6 +1729,16 @@ CHECK_OUT:
   BCS ENEMY_BACK
   RTS
 
+; T2 = step, T3 / T4 = top speed of a dive (from T6 / T7)
+DIVE_STEP:
+  LDA T6
+  STA T2
+  LDA T7
+  STA T3
+  LDA #$01
+  STA T4
+  RTS
+
 ; X = enemy out of the screen: back on the horizon (gone in the challenge)
 ENEMY_BACK:
   LDA CHAL
@@ -1567,27 +1746,11 @@ ENEMY_BACK:
   LDA E_K,X
   CMP #4
   BCS .co_gone
-  STZ E_MODE,X                 ; again from the horizon, somewhere else
-  LDA #ENTER_Y
-  STA E_Y,X
-  STZ E_YL,X
-  LDA RND
+  LDA RND                      ; again from the horizon, somewhere else
   AND #$7F
   CLC
   ADC #64
-  STA E_CX,X
-  LDA RND
-  STA E_PH,X
-  AND #$C0
-  CMP #$C0
-  BNE .co_a
-  LDA #$80
-.co_a:
-  LSR A                        ; 0, 32, 64... -> 0, 64, 128 of SINT
-  STA E_AMP,X
-  ASL E_AMP,X
-  JSR SWAY_X
-  JMP FIRE_TIME
+  JMP FROM_HORIZON
 .co_gone:
   STZ E_ST,X                   ; it escaped
   JMP FORM_MINUS
@@ -1642,7 +1805,7 @@ ACCEL16:
 ; ===============================================================
 ;  EGGS AND SHOTS OF THE ENEMIES
 ; ===============================================================
-; X = enemy approaching: when its clock runs out it fires at the fighter
+; X = enemy approaching or in the ring: when its clock runs out it fires at the fighter
 ENEMY_FIRE:
   LDA CHAL
   BNE .ef_r
@@ -1655,11 +1818,8 @@ ENEMY_FIRE:
   DEC E_T,X
   BNE .ef_r
   JSR FIRE_TIME
-  LDA E_Y,X
-  CMP #76
-  BCC .ef_r
-  CMP #140
-  BCS .ef_r
+  LDA E_SZ,X                   ; not from too far
+  BEQ .ef_r
   LDA PST
   BNE .ef_r
   LDY #(NB-1)
@@ -1682,22 +1842,28 @@ ENEMY_FIRE:
   LDA #0
   STA B_XL,Y
   STA B_YL,Y
-  STA T1
-  LDA SX                       ; aimed: dx / 64 pixels per frame
+  PHY                          ; aimed at the fighter: (dx, dy) / 32 pixels per frame
+  LDA #3
+  STA T2
+  LDA SX
   SEC
   SBC E_X,X
-  STA T0
-  BPL .ef_p
-  DEC T1
-.ef_p:
-  ASL T0
-  ROL T1
-  ASL T0
-  ROL T1
+  JSR SHL_D
+  PLY
   LDA T0
   STA B_VXL,Y
   LDA T1
   STA B_VXH,Y
+  PHY
+  LDA SY
+  SEC
+  SBC B_Y,Y
+  JSR SHL_D
+  PLY
+  LDA T0
+  STA B_VYL,Y
+  LDA T1
+  STA B_VYH,Y
   PHX
   LDA #W_EGG
   LDX #1
@@ -1717,15 +1883,22 @@ UPDATE_EGGS:
   LDA B_X,X
   ADC B_VXH,X
   STA B_X,X
+  CMP #4                       ; out of a side?
+  BCC .ug_out
+  CMP #252
+  BCS .ug_out
   CLC
   LDA B_YL,X
-  ADC #$40
+  ADC B_VYL,X
   STA B_YL,X
   LDA B_Y,X
-  ADC #2
+  ADC B_VYH,X
   STA B_Y,X
+  CMP #8                       ; out at the top or at the bottom?
+  BCC .ug_out
   CMP #190
   BCC .ug_n
+.ug_out:
   STZ B_ON,X
 .ug_n:
   DEX
@@ -1738,23 +1911,13 @@ UPDATE_EGGS:
 ; ===============================================================
 ; X = enemy: HW = half its size (it grows as it comes nearer)
 ENEMY_SIZE:
+  LDY E_SZ,X
   LDA E_K,X
   CMP #5
-  BEQ .es_big
-  LDA E_Y,X
-  CMP #96
-  BCC .es_s
-  CMP #132
-  BCC .es_m
-.es_big:
-  LDA #7
-  BRA .es_e
-.es_m:
-  LDA #5
-  BRA .es_e
-.es_s:
-  LDA #3
+  BNE .es_e
+  LDY #2                       ; the hydra is always big
 .es_e:
+  LDA SZ_HW,Y
   STA HW
   RTS
 
@@ -1927,8 +2090,8 @@ SHIP_HITS:
   LDA E_ST,X
   CMP #2
   BNE .sx_en
-  LDA E_Y,X
-  CMP #100
+  LDA E_SZ,X                   ; only the near ones
+  CMP #2
   BCC .sx_en
   JSR ENEMY_SIZE
   LDA HW
@@ -2117,7 +2280,7 @@ BUILD_SAT:
   CLC
   ADC #PT_SHIPD
   STA ON
-  LDA #$08
+  LDA #$0B
   STA OC
   JSR ADD_SPR
   LDA T7
@@ -2252,16 +2415,10 @@ ENEMY_SPR:
   CLC
   ADC T7
   STA T7
-  LDA E_Y,X                    ; far, middle, near
-  LDY #0
-  CMP #96
-  BCC .sp_s
-  LDY #8
-  CMP #132
-  BCC .sp_s
-  LDY #16
-.sp_s:
-  TYA
+  LDA E_SZ,X                   ; far, middle, near: + size x 8
+  ASL A
+  ASL A
+  ASL A
   CLC
   ADC T7
   STA ON
@@ -2269,9 +2426,10 @@ ENEMY_SPR:
 
 
 ; ===============================================================
-;  THE GROUND: one tile per row, all the same along the row; the
-;  bands are the colours of its 8 lines, rewritten every frame:
-;  line i is in band A when bit 5 of (DEPTH(i) + SCROLL) is set
+;  THE GROUND (rows 12-22): one tile per row (228-238), all the
+;  same along the row; the bands are the colours of its 8 lines,
+;  rewritten every frame: line i is in band A when bit 5 of
+;  (DEPTH(i) + SCROLL) is set
 ; ===============================================================
 GROUND_COLOURS:
   CLC
@@ -2284,32 +2442,25 @@ GROUND_COLOURS:
   LDA FRAME_CNT                ; the far lines move slowly: half of them in every frame
   AND #$01
   BNE .gc_odd
-  LDA #$00                     ; lines 0-29
+  LDA #$20                     ; lines 0-15 (third 1, tiles 228-229)
   LDX #0
-  LDY #30
+  LDY #16
   BRA .gc_far
 .gc_odd:
-  LDA #30                      ; lines 30-59
-  LDX #30
-  LDY #60
+  LDA #$30                     ; lines 16-31 (tiles 230-231)
+  LDX #16
+  LDY #32
 .gc_far:
-  JSR GC_RUN3
-  LDA #60                      ; lines 60-63 (third 1)
-  LDX #60
-  LDY #64
-  JSR GC_RUN3
-  LDA #$00                     ; lines 64-119 (third 2)
   STA VREG
-  LDA #($40 | $34)
+  LDA #($40 | $2F)
   STA VREG
+  JSR GC_RUN
+  LDA #$40                     ; lines 32-87 (third 2, tiles 232-238)
+  STA VREG
+  LDA #($40 | $37)
+  STA VREG
+  LDX #32
   LDY #NLINES
-  BRA GC_RUN
-
-; colours of lines X to Y-1 of the third 1, A = first line
-GC_RUN3:
-  STA VREG
-  LDA #($40 | $2C)
-  STA VREG
   ; fall into GC_RUN
 
 ; lines X to Y-1: band A or band B by bit 5 of (DEPTH + SCROLL)
@@ -2332,7 +2483,7 @@ GC_RUN:
   BNE .gr_l
   RTS
 
-; the skyline on rows 6-7 moves the other way when the fighter steers (2 pixel steps);
+; the skyline on rows 9-11 moves the other way when the fighter steers (2 pixel steps);
 ; one row per frame (HROW = row still to draw, 0 = none)
 HORIZON:
   LDA HROW
@@ -2345,22 +2496,27 @@ HORIZON:
   RTS
 .ho_go:
   STA HOFF
-  LDA #6
+  LDA #9
   STA HROW
 .ho_row:
-  LDA HOFF                     ; shift of the tiles: (offset / 2) and 3
+  LDA HOFF                     ; shift of the tiles: (offset / 2) and 3, times 24
   LSR A
   AND #$03
   ASL A
   ASL A
   ASL A
+  STA T2
   ASL A
-  ORA #128
-  LDX HROW
-  CPX #7
-  BNE .ho_t
-  ORA #8                       ; row 7: the lower tiles
-.ho_t:
+  ADC T2
+  STA T2
+  LDA HROW                     ; + (row - 9) x 8 + 128
+  SEC
+  SBC #9
+  ASL A
+  ASL A
+  ASL A
+  ADC #128
+  ADC T2
   STA T2
   LDA HOFF
   LSR A
@@ -2377,6 +2533,7 @@ HORIZON:
   STA HBUF,Y
   DEY
   BPL .ho_b
+  LDX HROW
   LDY #0
   JSR NT_XY
   LDX #4
@@ -2399,47 +2556,32 @@ HORIZON:
   STA VDATA
   DEX
   BNE .ho_4
-  LDA HROW                     ; row 6 done: row 7 in the next frame
-  CMP #6
-  BNE .ho_end
-  LDA #7
-  STA HROW
+  LDA HROW                     ; the next row in the next frame
+  CMP #11
+  BEQ .ho_end
+  INC HROW
   RTS
 .ho_end:
   STZ HROW
   RTS
 
-; the field: stars, horizon, ground, HUD
+; the field: black sky, hills, ground, HUD (the name table is clear)
 DRAW_FIELD:
-  LDX #2                       ; stars on rows 2-5
-  LDY #0
-  JSR NT_XY
-  LDX #0
-.df_s:
-  LDA STAR_NT,X
-  STA VDATA
-  INX
-  CPX #128
-  BNE .df_s
   LDA #$FF
   STA HOFF
   STZ HROW
-  JSR HORIZON                  ; row 6
-  JSR HORIZON                  ; row 7
-  LDX #8                       ; ground rows 8-22
+  JSR HORIZON                  ; row 9
+  JSR HORIZON                  ; row 10
+  JSR HORIZON                  ; row 11
+  LDX #12                      ; ground rows 12-22: tile 216 + row
 .df_r:
   PHX
   LDY #0
   JSR NT_XY
   PLX
   TXA
-  SEC
-  SBC #8
-  CPX #16
-  BCC .df_t
-  SBC #8
-.df_t:
-  ORA #128
+  CLC
+  ADC #216
   LDY #32
 .df_c:
   STA VDATA
@@ -2460,9 +2602,8 @@ DRAW_GROUND_LOW:
   JSR NT_XY
   PLX
   TXA
-  SEC
-  SBC #16
-  ORA #128
+  CLC
+  ADC #216
   LDY #32
 .dg_c:
   STA VDATA
@@ -2473,17 +2614,15 @@ DRAW_GROUND_LOW:
   BNE .dg_r
   RTS
 
-; the stars again on rows 3-4 (where the messages are written)
+; the black sky again on rows 3-4 (where the messages are written)
 CLEAR_BANNER:
   LDX #3
   LDY #0
   JSR NT_XY
-  LDX #0
+  LDX #64
 .cb_l:
-  LDA STAR_NT+32,X
-  STA VDATA
-  INX
-  CPX #64
+  STZ VDATA
+  DEX
   BNE .cb_l
   RTS
 
@@ -3484,19 +3623,21 @@ SFX_BOOM:                       ; A = id (S_SMALL / S_BIG), X = pan
 SC_COL:     .byte 1,25                         ; score of player 1 / 2: column on row 1
 PS_OFF:     .byte 0,8                          ; block of the player in PSAVE
 XL_AT:      .byte $02,$05                      ; extra fighters at 20000 and 50000 (BCD high digits)
-GC_OFF:     .word GCB,GCB+120,GCB+240,GCB+360  ; colours of the bands of every landscape
+GC_OFF:     .word GCB,GCB+88,GCB+176,GCB+264   ; colours of the bands of every landscape
 SKY_SRC:    .word SKY_P0,SKY_C0,SKY_P1,SKY_C1,SKY_P2,SKY_C2,SKY_P3,SKY_C3
-; the paths of the formations: centre, sway (0, 64, 128 = 24, 48, 72 pixels), phase step, first phase
-FP_CX:      .byte 128,80,176,128,64,192,128,100
-FP_AMP:     .byte 64,0,0,128,64,64,128,64
-FP_W:       .byte 3,4,4,2,5,5,3,6
-FP_PH:      .byte 0,16,48,32,0,128,64,32
-; by kind: amoeba, bird, pterosaur, UFO, alien, hydra
+; the formations: where they appear on the horizon, ring (64 = 48 x 24, 128 = 72 x 48 pixels),
+; angle step (signed: the way they turn), first angle
+FP_CX:      .byte 128,40,216,128,72,184,100,156
+FP_AMP:     .byte 128,64,128,64,128,64,128,64
+FP_W:       .byte 1,$FF,1,$FF,2,$FE,1,$FF
+FP_PH:      .byte 0,16,8,24,0,16,8,24
+; by kind: cross, bird, jet, UFO, alien, hydra
 EN_BASE:    .byte PT_EN,PT_EN+24,PT_EN+48,PT_EN+72,PT_EN+96,PT_HYDRA
-EN_COL:     .byte $03,$09,$0A,$07,$0D,$08
+EN_COL:     .byte $07,$09,$0E,$03,$0D,$08
 EN_PL:      .byte $00,$50,$00,$00,$00,$00      ; points (BCD): 100, 150, 200, 300, 100, 1000
 EN_PM:      .byte $01,$01,$02,$03,$01,$10
-DIVE_P:     .byte 1,2,3,2,0,0                  ; chance of a dive, of 4
+DIVE_P:     .byte 2,2,3,2,0,0                  ; chance of a dive when it leaves the ring, of 4
+SZ_HW:      .byte 3,5,7                        ; half size by distance
 ; the formation bonus: 200, 400, 800, 1600, 3200, 6400, 10000, 5000
 BON_L:      .byte $00,$00,$00,$00,$00,$00,$00,$00
 BON_M:      .byte $02,$04,$08,$16,$32,$64,$00,$50
@@ -3510,7 +3651,7 @@ EXPL_C:     .byte $0B,$0A,$09
 TITLE_SY:   .byte 7*8-5,9*8-5,11*8-5,13*8-5,151,151
 TITLE_SX:   .byte 60,60,60,60,120,120
 TITLE_SN:   .byte PT_EN+16,PT_EN+40,PT_EN+64,PT_EN+88,PT_SHIPD,PT_SHIP
-TITLE_SC:   .byte $03,$09,$0A,$07,$08,$0F
+TITLE_SC:   .byte $07,$09,$0E,$03,$0B,$0F
 
 ; text records: row, column, characters, 0   (end of list: $FF)
 TXT_TOP:
@@ -3520,9 +3661,9 @@ TXT_TOP:
   .byte $FF
 TXT_TITLE:
   .byte 5,8,"- SCORE TABLE -",0
-  .byte 7,10,"AMOEBA      100",0
+  .byte 7,10,"CROSS       100",0
   .byte 9,10,"BIRD        150",0
-  .byte 11,10,"PTEROSAUR   200",0
+  .byte 11,10,"JET         200",0
   .byte 13,10,"UFO         300",0
   .byte 15,2,"FORMATION BONUS UP TO 10000",0
   .byte 16,1,"B1 = 1 PLAYER   B2 = 2 PLAYERS",0
@@ -3690,81 +3831,81 @@ PT_HYDRA = 156
 PT_EXPL = 164
 SPR_PAGES = 6
 SPRITES:
-;  0 ship, 4 ship L, 8 ship R, 12 ship detail, 16 ship detail L, 20 ship detail R, 24 dual shot, 28 single shot, 32 egg, 36 amoeba 7 0, 40 amoeba 7 1, 44 amoeba 11 0, 48 amoeba 11 1, 52 amoeba 16 0, 56 amoeba 16 1, 60 bird 7 0, 64 bird 7 1, 68 bird 11 0, 72 bird 11 1, 76 bird 16 0, 80 bird 16 1, 84 ptero 7 0, 88 ptero 7 1, 92 ptero 11 0, 96 ptero 11 1, 100 ptero 16 0, 104 ptero 16 1, 108 ufo 7 0, 112 ufo 7 1, 116 ufo 11 0, 120 ufo 11 1, 124 ufo 16 0, 128 ufo 16 1, 132 alien 7 0, 136 alien 7 1, 140 alien 11 0, 144 alien 11 1, 148 alien 16 0, 152 alien 16 1, 156 hydra 0, 160 hydra 1, 164 explosion 0, 168 explosion 1, 172 explosion 2
-  .byte $01,$01,$03,$03,$07,$06,$4E,$5F,$7F,$FF,$FF,$EF,$C7,$83,$02,$00
-  .byte $80,$80,$C0,$C0,$E0,$60,$72,$FA,$FE,$FF,$FF,$F7,$E3,$C1,$40,$00
-  .byte $00,$00,$01,$01,$03,$03,$07,$0F,$0F,$0F,$0F,$07,$03,$01,$01,$00
-  .byte $C0,$C0,$E0,$E0,$F0,$30,$39,$FD,$FF,$FF,$FF,$FB,$F1,$E0,$20,$00
-  .byte $03,$03,$07,$07,$0F,$0C,$9C,$BF,$FF,$FF,$FF,$DF,$8F,$07,$04,$00
-  .byte $00,$00,$80,$80,$C0,$C0,$E0,$F0,$F0,$F0,$F0,$E0,$C0,$80,$80,$00
-  .byte $00,$00,$00,$00,$00,$01,$01,$00,$00,$30,$00,$00,$00,$00,$02,$00
-  .byte $00,$00,$00,$00,$00,$80,$80,$00,$00,$0C,$00,$00,$00,$00,$40,$00
-  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$08,$00,$00,$00,$00,$01,$00
-  .byte $00,$00,$00,$00,$00,$C0,$C0,$00,$00,$06,$00,$00,$00,$00,$20,$00
-  .byte $00,$00,$00,$00,$00,$03,$03,$00,$00,$60,$00,$00,$00,$00,$04,$00
-  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$10,$00,$00,$00,$00,$80,$00
+;  0 ship, 4 ship L, 8 ship R, 12 ship detail, 16 ship detail L, 20 ship detail R, 24 dual shot, 28 single shot, 32 egg, 36 cross 7 0, 40 cross 7 1, 44 cross 11 0, 48 cross 11 1, 52 cross 16 0, 56 cross 16 1, 60 bird 7 0, 64 bird 7 1, 68 bird 11 0, 72 bird 11 1, 76 bird 16 0, 80 bird 16 1, 84 jet 7 0, 88 jet 7 1, 92 jet 11 0, 96 jet 11 1, 100 jet 16 0, 104 jet 16 1, 108 ufo 7 0, 112 ufo 7 1, 116 ufo 11 0, 120 ufo 11 1, 124 ufo 16 0, 128 ufo 16 1, 132 alien 7 0, 136 alien 7 1, 140 alien 11 0, 144 alien 11 1, 148 alien 16 0, 152 alien 16 1, 156 hydra 0, 160 hydra 1, 164 explosion 0, 168 explosion 1, 172 explosion 2
+  .byte $00,$00,$00,$01,$01,$03,$02,$06,$1F,$7F,$FF,$FD,$C7,$83,$00,$00
+  .byte $00,$00,$00,$80,$80,$C0,$40,$60,$F8,$FE,$FF,$BF,$E3,$C1,$00,$00
+  .byte $00,$00,$00,$00,$00,$01,$01,$03,$0F,$0F,$0F,$0E,$03,$01,$00,$00
+  .byte $00,$00,$00,$C0,$C0,$E0,$20,$30,$FC,$FF,$FF,$DF,$F1,$E0,$00,$00
+  .byte $00,$00,$00,$03,$03,$07,$04,$0C,$3F,$FF,$FF,$FB,$8F,$07,$00,$00
+  .byte $00,$00,$00,$00,$00,$80,$80,$C0,$F0,$F0,$F0,$70,$C0,$80,$00,$00
+  .byte $00,$00,$00,$01,$01,$03,$01,$01,$00,$00,$00,$02,$04,$00,$00,$00
+  .byte $00,$00,$00,$80,$80,$C0,$80,$80,$00,$00,$00,$40,$20,$00,$00,$00
+  .byte $00,$00,$00,$00,$00,$01,$00,$00,$00,$00,$00,$01,$02,$00,$00,$00
+  .byte $00,$00,$00,$C0,$C0,$E0,$C0,$C0,$00,$00,$00,$20,$10,$00,$00,$00
+  .byte $00,$00,$00,$03,$03,$07,$03,$03,$00,$00,$00,$04,$08,$00,$00,$00
+  .byte $00,$00,$00,$00,$00,$80,$00,$00,$00,$00,$00,$80,$40,$00,$00,$00
   .byte $00,$00,$00,$00,$00,$10,$10,$10,$10,$10,$10,$00,$00,$00,$00,$00
   .byte $00,$00,$00,$00,$00,$08,$08,$08,$08,$08,$08,$00,$00,$00,$00,$00
   .byte $00,$00,$00,$00,$01,$01,$01,$01,$01,$01,$01,$01,$00,$00,$00,$00
   .byte $00,$00,$00,$00,$80,$80,$80,$80,$80,$80,$80,$80,$00,$00,$00,$00
   .byte $00,$00,$00,$00,$00,$01,$03,$03,$03,$01,$00,$00,$00,$00,$00,$00
   .byte $00,$00,$00,$00,$00,$80,$C0,$C0,$C0,$80,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$01,$07,$0F,$0F,$07,$0B,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$80,$C0,$E0,$E0,$E0,$A0,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$00,$07,$0F,$0F,$07,$05,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$00,$C0,$E0,$E0,$C0,$80,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$03,$0F,$1F,$3F,$3B,$3F,$0F,$37,$22,$00,$00,$00,$00
-  .byte $00,$00,$00,$C0,$F0,$F8,$F8,$D8,$F8,$F0,$D8,$88,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$0F,$1F,$3F,$3F,$1F,$0F,$0B,$08,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$F0,$B8,$F8,$F8,$F0,$E0,$90,$10,$00,$00,$00,$00
-  .byte $00,$07,$1F,$3D,$7D,$7F,$FF,$E7,$FF,$7F,$3F,$6F,$C7,$82,$00,$00
-  .byte $00,$E0,$F8,$BC,$BE,$FE,$FF,$E7,$FF,$FE,$FC,$F6,$E3,$41,$00,$00
-  .byte $00,$00,$0F,$3F,$7B,$7B,$FF,$FF,$73,$3F,$1F,$33,$22,$20,$00,$00
-  .byte $00,$00,$F0,$FC,$DE,$DE,$FF,$FF,$CE,$FC,$F8,$CC,$44,$04,$00,$00
-  .byte $00,$00,$00,$00,$08,$0D,$07,$03,$01,$00,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$20,$20,$E0,$C0,$00,$00,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$00,$00,$01,$0F,$09,$01,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$00,$00,$80,$E0,$A0,$00,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$20,$30,$39,$1F,$0F,$06,$03,$01,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$08,$08,$98,$F8,$F0,$E0,$C0,$80,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$01,$03,$3F,$3F,$3B,$23,$01,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$00,$80,$F8,$F8,$D8,$88,$80,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$0C,$0E,$07,$03,$07,$0E,$0C,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$60,$E0,$C0,$80,$C0,$E0,$60,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$00,$0C,$07,$03,$07,$0C,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$00,$60,$C0,$80,$C0,$60,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$30,$38,$1C,$0F,$06,$05,$06,$0F,$1C,$38,$30,$00,$00,$00
+  .byte $00,$00,$18,$38,$70,$E0,$C0,$40,$C0,$E0,$70,$38,$18,$00,$00,$00
+  .byte $00,$00,$00,$10,$3C,$0F,$06,$05,$06,$0F,$3C,$10,$00,$00,$00,$00
+  .byte $00,$00,$00,$10,$78,$E0,$C0,$40,$C0,$E0,$78,$10,$00,$00,$00,$00
+  .byte $60,$F0,$F8,$7C,$3E,$1F,$0E,$0D,$0D,$0E,$1F,$3E,$7C,$F8,$F0,$60
+  .byte $06,$0F,$1F,$3E,$7C,$F8,$70,$B0,$B0,$70,$F8,$7C,$3E,$1F,$0F,$06
+  .byte $00,$00,$60,$F8,$7E,$1F,$0E,$0D,$0D,$0E,$1F,$7E,$F8,$60,$00,$00
+  .byte $00,$00,$06,$1F,$7E,$F8,$70,$B0,$B0,$70,$F8,$7E,$1F,$06,$00,$00
+  .byte $00,$00,$00,$00,$08,$0D,$07,$02,$01,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$20,$60,$C0,$80,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$00,$01,$0F,$0F,$0B,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$00,$00,$E0,$E0,$A0,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$20,$31,$1B,$1F,$0F,$06,$03,$01,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$08,$18,$B0,$F0,$E0,$C0,$80,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$01,$13,$3F,$3F,$26,$03,$02,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$00,$90,$F8,$F8,$C8,$80,$80,$00,$00,$00,$00,$00
   .byte $80,$C0,$E1,$73,$7F,$3F,$1F,$0E,$06,$03,$01,$02,$00,$00,$00,$00
   .byte $01,$03,$87,$CE,$FE,$FC,$F8,$70,$60,$C0,$80,$40,$00,$00,$00,$00
   .byte $00,$00,$00,$01,$03,$67,$FF,$FF,$77,$C6,$83,$01,$02,$00,$00,$00
   .byte $00,$00,$00,$80,$C0,$E6,$FF,$FF,$EE,$63,$C1,$80,$40,$00,$00,$00
-  .byte $00,$00,$00,$00,$01,$0B,$0F,$07,$01,$01,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$00,$A0,$E0,$C0,$00,$00,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$01,$01,$07,$0B,$01,$01,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$00,$80,$C0,$A0,$00,$00,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$01,$03,$33,$3B,$3F,$0F,$05,$01,$01,$00,$00,$00,$00,$00
-  .byte $00,$00,$80,$80,$C8,$F8,$F8,$F0,$E0,$80,$80,$00,$00,$00,$00,$00
-  .byte $00,$00,$01,$03,$03,$0F,$3F,$33,$21,$01,$01,$00,$00,$00,$00,$00
-  .byte $00,$00,$80,$80,$C0,$E0,$F8,$C8,$80,$80,$80,$00,$00,$00,$00,$00
-  .byte $01,$03,$87,$C6,$F7,$FF,$7F,$3F,$1D,$09,$01,$01,$02,$00,$00,$00
-  .byte $80,$C0,$E1,$63,$EF,$FF,$FE,$FC,$B8,$90,$80,$80,$40,$00,$00,$00
-  .byte $01,$03,$02,$07,$1F,$7F,$FF,$C7,$83,$01,$01,$01,$02,$00,$00,$00
-  .byte $80,$C0,$40,$E0,$F8,$FE,$FF,$E3,$C1,$80,$80,$80,$40,$00,$00,$00
-  .byte $00,$00,$00,$00,$00,$01,$07,$0F,$07,$01,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$00,$80,$C0,$E0,$C0,$80,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$00,$01,$07,$0F,$07,$01,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$00,$80,$C0,$E0,$C0,$80,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$03,$07,$1F,$3F,$3F,$0F,$03,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$C0,$E0,$F0,$F8,$F8,$E0,$C0,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$03,$07,$1F,$3F,$1F,$0F,$03,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$C0,$E0,$F0,$F8,$F8,$E0,$C0,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$01,$03,$0B,$0F,$02,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$00,$80,$A0,$E0,$80,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$01,$03,$0B,$0F,$02,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$00,$80,$A0,$E0,$80,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$01,$03,$23,$26,$37,$3F,$16,$06,$04,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$80,$88,$C8,$D8,$F8,$D0,$C0,$40,$00,$00,$00,$00,$00
+  .byte $00,$00,$01,$03,$23,$26,$37,$3F,$16,$06,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$80,$88,$C8,$D8,$F8,$D0,$C0,$00,$00,$00,$00,$00,$00
+  .byte $01,$01,$03,$83,$86,$C6,$EF,$FF,$FF,$6E,$26,$04,$04,$00,$00,$00
+  .byte $80,$80,$C0,$C1,$61,$63,$F7,$FF,$FF,$76,$64,$20,$20,$00,$00,$00
+  .byte $01,$01,$03,$83,$86,$C6,$EF,$FF,$FF,$6E,$26,$06,$00,$00,$00,$00
+  .byte $80,$80,$C0,$C1,$61,$63,$F7,$FF,$FF,$76,$64,$60,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$00,$03,$07,$0F,$07,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$00,$80,$C0,$E0,$C0,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$00,$03,$07,$0F,$07,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$00,$80,$C0,$E0,$C0,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$03,$07,$0F,$1F,$3F,$1F,$0F,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$80,$C0,$E0,$F0,$F8,$F0,$E0,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$03,$07,$0F,$1F,$3F,$1F,$0F,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$80,$C0,$E0,$F0,$F8,$F0,$E0,$00,$00,$00,$00,$00,$00
   .byte $00,$00,$03,$07,$0D,$3F,$7F,$FF,$AA,$7F,$1F,$07,$00,$00,$00,$00
   .byte $00,$00,$C0,$E0,$B0,$FC,$FE,$FF,$AA,$FE,$F8,$E0,$00,$00,$00,$00
   .byte $00,$00,$03,$07,$0D,$3F,$7F,$FF,$55,$7F,$1F,$07,$00,$00,$00,$00
   .byte $00,$00,$C0,$E0,$B0,$FC,$FE,$FF,$55,$FE,$F8,$E0,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$00,$03,$07,$0F,$02,$00,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$00,$C0,$E0,$E0,$40,$00,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$00,$0B,$0F,$04,$00,$00,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$00,$C0,$E0,$40,$00,$00,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$08,$07,$0F,$3F,$2F,$2C,$00,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$20,$E0,$B0,$F8,$F8,$70,$00,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$04,$17,$1F,$1F,$08,$10,$00,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$20,$E8,$B8,$F0,$20,$10,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$00,$07,$0F,$0F,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$00,$C0,$E0,$E0,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$00,$0F,$07,$00,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$00,$E0,$C0,$00,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$0F,$1F,$3F,$3F,$0C,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$E0,$F0,$F8,$F8,$60,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$1F,$1F,$1F,$00,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$F0,$F0,$F0,$00,$00,$00,$00,$00,$00,$00,$00,$00
   .byte $00,$10,$08,$1F,$3B,$7F,$FF,$BF,$A0,$1C,$00,$00,$00,$00,$00,$00
   .byte $00,$08,$10,$F8,$DC,$FE,$FF,$FD,$05,$38,$00,$00,$00,$00,$00,$00
   .byte $00,$08,$48,$5F,$7B,$7F,$3F,$10,$20,$40,$00,$00,$00,$00,$00,$00
@@ -3788,7 +3929,7 @@ SPRITES:
   .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
   .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
 
-; small tiles: 8 stars (96-103), spare ship (104)
+; small tiles: 8 stars (96-103, not used), spare ship (104)
 TILE_PAT:
   .byte $20,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$01,$00,$00,$00,$00
   .byte $00,$00,$00,$00,$00,$00,$08,$00,$00,$40,$00,$00,$00,$00,$00,$00
@@ -3802,278 +3943,399 @@ TILE_COL:
   .byte $D0,$D0,$D0,$D0,$D0,$D0,$D0,$D0,$30,$30,$30,$30,$30,$30,$30,$30
   .byte $F0,$F0,$F0,$F0,$F0,$80,$80,$80
 
-; the skylines of the 4 landscapes: tiles 128-191 of the third 0 = shift (2 pixels) * 16 + row * 8 + column
+; the skylines of the 4 landscapes: tiles 128-223 of the third 1 = shift (2 pixels) * 24 + row * 8 + column
 SKY_P0:
-  .byte $00,$00,$00,$02,$02,$0F,$1F,$1F,$00,$00,$00,$00,$00,$80,$C0,$C0
-  .byte $00,$00,$00,$00,$00,$00,$00,$21,$00,$08,$08,$3E,$7F,$7F,$FF,$FF
-  .byte $00,$00,$00,$00,$00,$00,$80,$C1,$00,$00,$00,$00,$00,$40,$40,$F0
-  .byte $00,$00,$04,$04,$1F,$3F,$3F,$7F,$00,$00,$00,$00,$00,$80,$80,$C0
-  .byte $3F,$7F,$FF,$FF,$FF,$FF,$FF,$FF,$E0,$F0,$F9,$F9,$FF,$FF,$FF,$FF
-  .byte $23,$FB,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
-  .byte $E3,$E3,$FF,$FF,$FF,$FF,$FF,$FF,$F8,$F9,$FD,$FF,$FF,$FF,$FF,$FF
-  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$E0,$F0,$F0,$FC,$FF,$FF,$FF,$FF
-  .byte $00,$00,$00,$08,$08,$3E,$7F,$7F,$00,$00,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$01,$01,$03,$87,$00,$20,$20,$F8,$FC,$FC,$FE,$FF
-  .byte $00,$00,$00,$00,$00,$01,$01,$07,$00,$00,$00,$00,$00,$00,$00,$C1
-  .byte $00,$00,$10,$10,$7C,$FE,$FE,$FF,$00,$00,$00,$00,$00,$00,$00,$00
-  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$80,$C3,$E7,$E7,$FF,$FF,$FF,$FF
-  .byte $8F,$EF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
-  .byte $8F,$8F,$FF,$FF,$FF,$FF,$FF,$FF,$E3,$E7,$F7,$FF,$FF,$FF,$FF,$FF
-  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$80,$C1,$C3,$F3,$FF,$FF,$FF,$FF
-  .byte $00,$00,$00,$20,$20,$F8,$FC,$FC,$00,$00,$00,$00,$00,$00,$00,$02
-  .byte $00,$00,$00,$03,$07,$07,$0F,$1F,$00,$80,$80,$E0,$F0,$F0,$F8,$FC
-  .byte $00,$00,$00,$00,$00,$04,$04,$1F,$00,$00,$00,$00,$01,$03,$03,$07
-  .byte $00,$00,$40,$40,$F0,$F8,$F8,$FC,$00,$00,$00,$00,$00,$00,$01,$01
-  .byte $FE,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$02,$0F,$9F,$9F,$FF,$FF,$FF,$FF
-  .byte $3F,$BF,$FF,$FF,$FF,$FF,$FF,$FF,$FE,$FE,$FF,$FF,$FF,$FF,$FF,$FF
-  .byte $3F,$3F,$FF,$FF,$FF,$FF,$FF,$FF,$8F,$9F,$DF,$FF,$FF,$FF,$FF,$FF
-  .byte $FE,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$03,$07,$0F,$CF,$FF,$FF,$FF,$FF
-  .byte $00,$00,$00,$80,$80,$E0,$F0,$F0,$00,$00,$00,$00,$00,$00,$00,$08
-  .byte $00,$02,$02,$0F,$1F,$1F,$3F,$7F,$00,$00,$00,$80,$C0,$C0,$E0,$F0
-  .byte $00,$00,$00,$00,$00,$10,$10,$7C,$00,$00,$01,$01,$07,$0F,$0F,$1F
-  .byte $00,$00,$00,$00,$C0,$E0,$E0,$F0,$00,$00,$00,$00,$00,$03,$07,$07
-  .byte $F8,$FC,$FE,$FE,$FF,$FF,$FF,$FF,$08,$3E,$7F,$7F,$FF,$FF,$FF,$FF
-  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$F8,$F8,$FF,$FF,$FF,$FF,$FF,$FF
-  .byte $FE,$FE,$FF,$FF,$FF,$FF,$FF,$FF,$3F,$7F,$7F,$FF,$FF,$FF,$FF,$FF
-  .byte $F8,$FC,$FC,$FF,$FF,$FF,$FF,$FF,$0F,$1F,$3F,$3F,$FF,$FF,$FF,$FF
+  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$04,$04,$0E,$1F,$3F,$3F,$7F
+  .byte $00,$00,$00,$00,$00,$80,$80,$C0,$00,$00,$00,$00,$00,$00,$01,$03
+  .byte $10,$10,$38,$7C,$FE,$FE,$FF,$FF,$00,$00,$00,$00,$00,$00,$01,$81
+  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$01,$01,$07,$07,$0F,$0F,$3F,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $E0,$F0,$F0,$FC,$FD,$FF,$FF,$FF,$07,$47,$5F,$FF,$FF,$FF,$FF,$FF
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$C3,$C7,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $80,$C0,$E0,$E0,$F0,$F8,$FD,$FF,$00,$00,$00,$40,$40,$E0,$F0,$F8
+  .byte $3F,$7F,$7F,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$F8,$FC,$FE,$FF,$FF,$FF,$FF,$FF
+  .byte $00,$00,$00,$00,$00,$00,$00,$01,$00,$10,$10,$38,$7C,$FE,$FE,$FF
+  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$01,$03,$03,$07,$0F
+  .byte $40,$40,$E0,$F0,$F8,$F8,$FC,$FE,$00,$00,$00,$00,$00,$00,$04,$04
+  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $03,$07,$07,$1F,$1F,$3F,$3F,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $80,$C1,$C1,$F3,$F7,$FF,$FF,$FF,$1F,$1F,$7F,$FF,$FF,$FF,$FF,$FF
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$0E,$1F,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $00,$00,$80,$81,$C1,$E3,$F7,$FF,$00,$00,$00,$00,$00,$80,$C0,$E0
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$E0,$F1,$F9,$FF,$FF,$FF,$FF,$FF
+  .byte $00,$00,$00,$00,$01,$03,$03,$07,$00,$40,$40,$E0,$F0,$F8,$F8,$FC
+  .byte $00,$00,$00,$00,$00,$00,$00,$00,$01,$01,$03,$07,$0F,$0F,$1F,$3F
+  .byte $00,$00,$80,$C0,$E0,$E0,$F0,$F8,$00,$00,$00,$00,$00,$00,$10,$10
+  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $0F,$1F,$1F,$7F,$7F,$FF,$FF,$FF,$FE,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $00,$04,$05,$CF,$DF,$FF,$FF,$FF,$7F,$7F,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $FC,$FC,$FF,$FF,$FF,$FF,$FF,$FF,$38,$7C,$FE,$FE,$FF,$FF,$FF,$FF
+  .byte $00,$00,$00,$04,$04,$8E,$DF,$FF,$00,$00,$00,$00,$00,$00,$00,$83
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$83,$C7,$E7,$FF,$FF,$FF,$FF,$FF
+  .byte $00,$01,$01,$03,$07,$0F,$0F,$1F,$00,$00,$00,$80,$C0,$E0,$E0,$F0
+  .byte $00,$00,$00,$00,$00,$00,$00,$00,$04,$04,$0E,$1F,$3F,$3F,$7F,$FF
+  .byte $00,$00,$00,$00,$80,$80,$C0,$E0,$00,$00,$00,$00,$00,$00,$40,$40
+  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $3F,$7F,$7F,$FF,$FF,$FF,$FF,$FF,$F8,$FC,$FC,$FF,$FF,$FF,$FF,$FF
+  .byte $01,$11,$17,$3F,$7F,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $F0,$F1,$FF,$FF,$FF,$FF,$FF,$FF,$E0,$F0,$F8,$F8,$FC,$FE,$FF,$FF
+  .byte $00,$00,$00,$10,$10,$38,$7C,$FE,$00,$00,$00,$01,$01,$03,$03,$0F
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $FE,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$0F,$1F,$9F,$FF,$FF,$FF,$FF,$FF
 SKY_C0:
-  .byte $F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0,$F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0
-  .byte $F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0,$F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0
-  .byte $F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0,$F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0
-  .byte $F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0,$F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0
-  .byte $E0,$40,$40,$40,$40,$40,$40,$40,$E0,$40,$40,$40,$40,$40,$40,$40
-  .byte $E0,$40,$40,$40,$40,$40,$40,$40,$E0,$40,$40,$40,$40,$40,$40,$40
-  .byte $E0,$40,$40,$40,$40,$40,$40,$40,$E0,$40,$40,$40,$40,$40,$40,$40
-  .byte $E0,$40,$40,$40,$40,$40,$40,$40,$E0,$40,$40,$40,$40,$40,$40,$40
-  .byte $F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0,$F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0
-  .byte $F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0,$F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0
-  .byte $F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0,$F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0
-  .byte $F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0,$F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0
-  .byte $E0,$40,$40,$40,$40,$40,$40,$40,$E0,$40,$40,$40,$40,$40,$40,$40
-  .byte $E0,$40,$40,$40,$40,$40,$40,$40,$E0,$40,$40,$40,$40,$40,$40,$40
-  .byte $E0,$40,$40,$40,$40,$40,$40,$40,$E0,$40,$40,$40,$40,$40,$40,$40
-  .byte $E0,$40,$40,$40,$40,$40,$40,$40,$E0,$40,$40,$40,$40,$40,$40,$40
-  .byte $F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0,$F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0
-  .byte $F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0,$F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0
-  .byte $F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0,$F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0
-  .byte $F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0,$F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0
-  .byte $E0,$40,$40,$40,$40,$40,$40,$40,$E0,$40,$40,$40,$40,$40,$40,$40
-  .byte $E0,$40,$40,$40,$40,$40,$40,$40,$E0,$40,$40,$40,$40,$40,$40,$40
-  .byte $E0,$40,$40,$40,$40,$40,$40,$40,$E0,$40,$40,$40,$40,$40,$40,$40
-  .byte $E0,$40,$40,$40,$40,$40,$40,$40,$E0,$40,$40,$40,$40,$40,$40,$40
-  .byte $F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0,$F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0
-  .byte $F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0,$F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0
-  .byte $F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0,$F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0
-  .byte $F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0,$F0,$F0,$F0,$F0,$E0,$E0,$E0,$E0
-  .byte $E0,$40,$40,$40,$40,$40,$40,$40,$E0,$40,$40,$40,$40,$40,$40,$40
-  .byte $E0,$40,$40,$40,$40,$40,$40,$40,$E0,$40,$40,$40,$40,$40,$40,$40
-  .byte $E0,$40,$40,$40,$40,$40,$40,$40,$E0,$40,$40,$40,$40,$40,$40,$40
-  .byte $E0,$40,$40,$40,$40,$40,$40,$40,$E0,$40,$40,$40,$40,$40,$40,$40
+  .byte $80,$80,$90,$60,$A0,$A0,$A0,$A0,$80,$80,$90,$60,$A0,$A0,$A0,$A0
+  .byte $80,$80,$90,$60,$A0,$A0,$A0,$A0,$80,$80,$90,$60,$A0,$A0,$A0,$A0
+  .byte $80,$80,$90,$60,$A0,$A0,$A0,$A0,$80,$80,$90,$60,$A0,$A0,$A0,$A0
+  .byte $80,$80,$90,$60,$A0,$A0,$A0,$A0,$80,$80,$90,$60,$A0,$A0,$A0,$A0
+  .byte $60,$A0,$A0,$A0,$A0,$A0,$60,$A0,$60,$A0,$A0,$A0,$A0,$A0,$60,$A0
+  .byte $60,$A0,$A0,$A0,$A0,$A0,$60,$A0,$60,$A0,$A0,$A0,$A0,$A0,$60,$A0
+  .byte $60,$A0,$A0,$A0,$A0,$A0,$60,$A0,$60,$A0,$A0,$A0,$A0,$A0,$60,$A0
+  .byte $60,$A0,$A0,$A0,$A0,$A0,$60,$A0,$60,$A0,$A0,$A0,$A0,$A0,$60,$A0
+  .byte $A0,$A0,$A0,$60,$A0,$A0,$60,$60,$A0,$A0,$A0,$60,$A0,$A0,$60,$60
+  .byte $A0,$A0,$A0,$60,$A0,$A0,$60,$60,$A0,$A0,$A0,$60,$A0,$A0,$60,$60
+  .byte $A0,$A0,$A0,$60,$A0,$A0,$60,$60,$A0,$A0,$A0,$60,$A0,$A0,$60,$60
+  .byte $A0,$A0,$A0,$60,$A0,$A0,$60,$60,$A0,$A0,$A0,$60,$A0,$A0,$60,$60
+  .byte $80,$80,$90,$60,$A0,$A0,$A0,$A0,$80,$80,$90,$60,$A0,$A0,$A0,$A0
+  .byte $80,$80,$90,$60,$A0,$A0,$A0,$A0,$80,$80,$90,$60,$A0,$A0,$A0,$A0
+  .byte $80,$80,$90,$60,$A0,$A0,$A0,$A0,$80,$80,$90,$60,$A0,$A0,$A0,$A0
+  .byte $80,$80,$90,$60,$A0,$A0,$A0,$A0,$80,$80,$90,$60,$A0,$A0,$A0,$A0
+  .byte $60,$A0,$A0,$A0,$A0,$A0,$60,$A0,$60,$A0,$A0,$A0,$A0,$A0,$60,$A0
+  .byte $60,$A0,$A0,$A0,$A0,$A0,$60,$A0,$60,$A0,$A0,$A0,$A0,$A0,$60,$A0
+  .byte $60,$A0,$A0,$A0,$A0,$A0,$60,$A0,$60,$A0,$A0,$A0,$A0,$A0,$60,$A0
+  .byte $60,$A0,$A0,$A0,$A0,$A0,$60,$A0,$60,$A0,$A0,$A0,$A0,$A0,$60,$A0
+  .byte $A0,$A0,$A0,$60,$A0,$A0,$60,$60,$A0,$A0,$A0,$60,$A0,$A0,$60,$60
+  .byte $A0,$A0,$A0,$60,$A0,$A0,$60,$60,$A0,$A0,$A0,$60,$A0,$A0,$60,$60
+  .byte $A0,$A0,$A0,$60,$A0,$A0,$60,$60,$A0,$A0,$A0,$60,$A0,$A0,$60,$60
+  .byte $A0,$A0,$A0,$60,$A0,$A0,$60,$60,$A0,$A0,$A0,$60,$A0,$A0,$60,$60
+  .byte $80,$80,$90,$60,$A0,$A0,$A0,$A0,$80,$80,$90,$60,$A0,$A0,$A0,$A0
+  .byte $80,$80,$90,$60,$A0,$A0,$A0,$A0,$80,$80,$90,$60,$A0,$A0,$A0,$A0
+  .byte $80,$80,$90,$60,$A0,$A0,$A0,$A0,$80,$80,$90,$60,$A0,$A0,$A0,$A0
+  .byte $80,$80,$90,$60,$A0,$A0,$A0,$A0,$80,$80,$90,$60,$A0,$A0,$A0,$A0
+  .byte $60,$A0,$A0,$A0,$A0,$A0,$60,$A0,$60,$A0,$A0,$A0,$A0,$A0,$60,$A0
+  .byte $60,$A0,$A0,$A0,$A0,$A0,$60,$A0,$60,$A0,$A0,$A0,$A0,$A0,$60,$A0
+  .byte $60,$A0,$A0,$A0,$A0,$A0,$60,$A0,$60,$A0,$A0,$A0,$A0,$A0,$60,$A0
+  .byte $60,$A0,$A0,$A0,$A0,$A0,$60,$A0,$60,$A0,$A0,$A0,$A0,$A0,$60,$A0
+  .byte $A0,$A0,$A0,$60,$A0,$A0,$60,$60,$A0,$A0,$A0,$60,$A0,$A0,$60,$60
+  .byte $A0,$A0,$A0,$60,$A0,$A0,$60,$60,$A0,$A0,$A0,$60,$A0,$A0,$60,$60
+  .byte $A0,$A0,$A0,$60,$A0,$A0,$60,$60,$A0,$A0,$A0,$60,$A0,$A0,$60,$60
+  .byte $A0,$A0,$A0,$60,$A0,$A0,$60,$60,$A0,$A0,$A0,$60,$A0,$A0,$60,$60
+  .byte $80,$80,$90,$60,$A0,$A0,$A0,$A0,$80,$80,$90,$60,$A0,$A0,$A0,$A0
+  .byte $80,$80,$90,$60,$A0,$A0,$A0,$A0,$80,$80,$90,$60,$A0,$A0,$A0,$A0
+  .byte $80,$80,$90,$60,$A0,$A0,$A0,$A0,$80,$80,$90,$60,$A0,$A0,$A0,$A0
+  .byte $80,$80,$90,$60,$A0,$A0,$A0,$A0,$80,$80,$90,$60,$A0,$A0,$A0,$A0
+  .byte $60,$A0,$A0,$A0,$A0,$A0,$60,$A0,$60,$A0,$A0,$A0,$A0,$A0,$60,$A0
+  .byte $60,$A0,$A0,$A0,$A0,$A0,$60,$A0,$60,$A0,$A0,$A0,$A0,$A0,$60,$A0
+  .byte $60,$A0,$A0,$A0,$A0,$A0,$60,$A0,$60,$A0,$A0,$A0,$A0,$A0,$60,$A0
+  .byte $60,$A0,$A0,$A0,$A0,$A0,$60,$A0,$60,$A0,$A0,$A0,$A0,$A0,$60,$A0
+  .byte $A0,$A0,$A0,$60,$A0,$A0,$60,$60,$A0,$A0,$A0,$60,$A0,$A0,$60,$60
+  .byte $A0,$A0,$A0,$60,$A0,$A0,$60,$60,$A0,$A0,$A0,$60,$A0,$A0,$60,$60
+  .byte $A0,$A0,$A0,$60,$A0,$A0,$60,$60,$A0,$A0,$A0,$60,$A0,$A0,$60,$60
+  .byte $A0,$A0,$A0,$60,$A0,$A0,$60,$60,$A0,$A0,$A0,$60,$A0,$A0,$60,$60
 SKY_P1:
-  .byte $00,$00,$00,$00,$00,$01,$00,$00,$00,$00,$00,$60,$F0,$F8,$F0,$60
-  .byte $00,$00,$00,$01,$03,$07,$03,$01,$00,$00,$00,$80,$C0,$E0,$C0,$80
-  .byte $00,$00,$00,$03,$07,$0F,$07,$03,$00,$00,$00,$00,$80,$C0,$80,$00
-  .byte $00,$00,$00,$30,$78,$FC,$78,$30,$00,$00,$00,$30,$78,$FC,$78,$30
-  .byte $00,$00,$1F,$7F,$FF,$FF,$FF,$FF,$60,$60,$61,$FF,$FF,$FF,$FF,$FF
-  .byte $01,$3D,$FF,$FF,$FF,$FF,$FF,$FF,$80,$80,$80,$C0,$FF,$FF,$FF,$FF
-  .byte $03,$03,$03,$03,$FF,$FF,$FF,$FF,$00,$00,$00,$00,$00,$80,$E1,$FF
-  .byte $30,$30,$30,$30,$30,$3F,$FF,$FF,$30,$30,$30,$30,$30,$B3,$FF,$FF
-  .byte $00,$00,$00,$01,$03,$07,$03,$01,$00,$00,$00,$80,$C0,$E0,$C0,$80
-  .byte $00,$00,$00,$06,$0F,$1F,$0F,$06,$00,$00,$00,$00,$00,$80,$00,$00
-  .byte $00,$00,$00,$0C,$1E,$3F,$1E,$0C,$00,$00,$00,$00,$01,$03,$01,$00
-  .byte $00,$00,$00,$C0,$E1,$F3,$E1,$C0,$00,$00,$00,$C0,$E0,$F0,$E0,$C0
-  .byte $01,$01,$7D,$FF,$FF,$FF,$FF,$FF,$80,$80,$87,$FF,$FF,$FF,$FF,$FF
-  .byte $06,$F6,$FE,$FF,$FF,$FF,$FF,$FF,$00,$00,$00,$00,$FF,$FF,$FF,$FF
-  .byte $0C,$0C,$0C,$0C,$FC,$FE,$FF,$FF,$00,$00,$00,$00,$00,$00,$87,$FF
-  .byte $C0,$C0,$C0,$C0,$C0,$FE,$FF,$FF,$C0,$C0,$C0,$C1,$C3,$CF,$FF,$FF
-  .byte $00,$00,$00,$06,$0F,$1F,$0F,$06,$00,$00,$00,$00,$00,$80,$00,$00
-  .byte $00,$00,$00,$18,$3C,$7E,$3C,$18,$00,$00,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$30,$78,$FC,$78,$30,$00,$00,$00,$03,$07,$0F,$07,$03
-  .byte $00,$00,$00,$03,$87,$CF,$87,$03,$00,$00,$00,$00,$80,$C0,$80,$00
-  .byte $06,$06,$F6,$FF,$FF,$FF,$FF,$FF,$00,$03,$1F,$FF,$FF,$FF,$FF,$FF
-  .byte $18,$D8,$F8,$FC,$FF,$FF,$FF,$FF,$00,$00,$00,$00,$FF,$FF,$FF,$FF
-  .byte $30,$30,$30,$30,$F0,$F8,$FE,$FF,$03,$03,$03,$03,$03,$03,$1F,$FF
-  .byte $03,$03,$03,$03,$03,$FB,$FF,$FF,$00,$00,$01,$07,$0F,$3F,$FF,$FF
-  .byte $00,$00,$00,$18,$3C,$7E,$3C,$18,$00,$00,$00,$00,$00,$01,$00,$00
-  .byte $00,$00,$00,$60,$F0,$F8,$F0,$60,$00,$00,$00,$00,$01,$03,$01,$00
-  .byte $00,$00,$00,$C0,$E0,$F0,$E0,$C0,$00,$00,$00,$0C,$1E,$3F,$1E,$0C
-  .byte $00,$00,$00,$0C,$1E,$3F,$1E,$0C,$00,$00,$00,$00,$00,$00,$00,$00
-  .byte $18,$18,$D8,$FF,$FF,$FF,$FF,$FF,$00,$0F,$7F,$FF,$FF,$FF,$FF,$FF
-  .byte $60,$60,$E0,$F0,$FF,$FF,$FF,$FF,$00,$00,$00,$00,$FF,$FF,$FF,$FF
-  .byte $C0,$C0,$C0,$C0,$C0,$E0,$F8,$FF,$0C,$0C,$0C,$0C,$0C,$0F,$7F,$FF
-  .byte $0C,$0C,$0C,$0C,$0C,$EC,$FF,$FF,$00,$00,$07,$1F,$3F,$FF,$FF,$FF
+  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$60,$F0
+  .byte $00,$00,$00,$00,$00,$01,$03,$07,$00,$00,$00,$00,$00,$80,$C0,$E0
+  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $01,$03,$01,$00,$00,$00,$38,$FE,$F8,$FC,$F8,$F0,$61,$63,$6F,$7F
+  .byte $0F,$07,$03,$E1,$F9,$FD,$FF,$FF,$F0,$E0,$C0,$80,$80,$80,$80,$81
+  .byte $00,$00,$03,$07,$0F,$1F,$0F,$C7,$00,$00,$00,$80,$C1,$E0,$C0,$80
+  .byte $00,$30,$78,$FC,$FE,$FC,$79,$30,$00,$00,$00,$30,$78,$FC,$FE,$FC
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$C7,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $E3,$FB,$FB,$FF,$FF,$FF,$FF,$FF,$00,$00,$00,$00,$03,$07,$FF,$FF
+  .byte $30,$30,$30,$F0,$FC,$FF,$FF,$FF,$79,$33,$33,$37,$3F,$3F,$FF,$FF
+  .byte $00,$00,$00,$00,$00,$00,$01,$03,$00,$00,$00,$00,$00,$00,$80,$C0
+  .byte $00,$00,$00,$00,$00,$06,$0F,$1F,$00,$00,$00,$00,$00,$00,$00,$80
+  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $07,$0F,$07,$03,$01,$01,$E1,$F9,$E0,$F0,$E0,$C3,$87,$8F,$BF,$FF
+  .byte $3F,$1F,$0F,$86,$E6,$F6,$FE,$FE,$C0,$80,$00,$00,$00,$00,$00,$07
+  .byte $00,$00,$0C,$1E,$3F,$7F,$3F,$1E,$00,$00,$01,$03,$07,$83,$01,$00
+  .byte $00,$C0,$E0,$F0,$F9,$F3,$E7,$C3,$00,$00,$00,$C0,$E0,$F0,$F8,$F3
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$1F,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $8C,$EC,$EC,$FC,$FC,$FC,$FF,$FF,$00,$00,$00,$03,$0F,$1F,$FF,$FF
+  .byte $C1,$C0,$C0,$C0,$F0,$FC,$FF,$FF,$E7,$CF,$CF,$DF,$FF,$FF,$FF,$FF
+  .byte $00,$00,$00,$00,$00,$00,$06,$0F,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$00,$18,$3C,$7E,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $1F,$3F,$1F,$0F,$06,$06,$86,$E7,$80,$C0,$80,$0E,$1F,$3F,$FF,$FF
+  .byte $FF,$7E,$3C,$18,$98,$D8,$F8,$F8,$00,$00,$00,$00,$00,$01,$00,$1C
+  .byte $00,$00,$30,$78,$FC,$FE,$FC,$78,$00,$03,$07,$0F,$1F,$0F,$07,$03
+  .byte $00,$00,$80,$C3,$E7,$CF,$9F,$0F,$00,$00,$00,$00,$80,$C0,$E3,$CF
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $FC,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$7E,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $30,$B0,$B0,$F0,$F0,$F0,$FF,$FF,$03,$03,$03,$0F,$3F,$7F,$FF,$FF
+  .byte $07,$03,$03,$03,$C3,$F3,$FF,$FF,$9F,$3F,$3F,$7F,$FF,$FF,$FF,$FF
+  .byte $00,$00,$00,$00,$00,$00,$18,$3C,$00,$00,$00,$00,$00,$00,$00,$01
+  .byte $00,$00,$00,$00,$00,$60,$F0,$F8,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $7E,$FF,$7E,$3C,$18,$18,$1B,$9F,$03,$01,$00,$38,$7E,$FF,$FF,$FF
+  .byte $FC,$F8,$F0,$60,$60,$60,$E0,$E0,$00,$00,$00,$01,$03,$07,$03,$71
+  .byte $00,$00,$C0,$E0,$F0,$F8,$F0,$E0,$00,$0C,$1E,$3F,$7F,$3F,$1E,$0C
+  .byte $00,$00,$00,$0C,$9E,$3F,$7F,$3F,$00,$00,$00,$00,$00,$00,$8E,$3F
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $F1,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$F8,$FE,$FE,$FF,$FF,$FF,$FF,$FF
+  .byte $C0,$C0,$C0,$C0,$C0,$C1,$FF,$FF,$0C,$0C,$0C,$3C,$FF,$FF,$FF,$FF
+  .byte $1E,$0C,$0C,$0D,$0F,$CF,$FF,$FF,$7F,$FF,$FF,$FF,$FF,$FF,$FF,$FF
 SKY_C1:
   .byte $30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30
   .byte $30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30
   .byte $30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30
   .byte $30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30
-  .byte $20,$20,$20,$20,$C0,$C0,$C0,$C0,$20,$20,$20,$20,$C0,$C0,$C0,$C0
-  .byte $20,$20,$20,$20,$C0,$C0,$C0,$C0,$20,$20,$20,$20,$C0,$C0,$C0,$C0
-  .byte $20,$20,$20,$20,$C0,$C0,$C0,$C0,$20,$20,$20,$20,$C0,$C0,$C0,$C0
-  .byte $20,$20,$20,$20,$C0,$C0,$C0,$C0,$20,$20,$20,$20,$C0,$C0,$C0,$C0
+  .byte $30,$20,$20,$20,$20,$20,$30,$20,$30,$20,$20,$20,$20,$20,$30,$20
+  .byte $30,$20,$20,$20,$20,$20,$30,$20,$30,$20,$20,$20,$20,$20,$30,$20
+  .byte $30,$20,$20,$20,$20,$20,$30,$20,$30,$20,$20,$20,$20,$20,$30,$20
+  .byte $30,$20,$20,$20,$20,$20,$30,$20,$30,$20,$20,$20,$20,$20,$30,$20
+  .byte $20,$20,$20,$C0,$C0,$C0,$C0,$C0,$20,$20,$20,$C0,$C0,$C0,$C0,$C0
+  .byte $20,$20,$20,$C0,$C0,$C0,$C0,$C0,$20,$20,$20,$C0,$C0,$C0,$C0,$C0
+  .byte $20,$20,$20,$C0,$C0,$C0,$C0,$C0,$20,$20,$20,$C0,$C0,$C0,$C0,$C0
+  .byte $20,$20,$20,$C0,$C0,$C0,$C0,$C0,$20,$20,$20,$C0,$C0,$C0,$C0,$C0
   .byte $30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30
   .byte $30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30
   .byte $30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30
   .byte $30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30
-  .byte $20,$20,$20,$20,$C0,$C0,$C0,$C0,$20,$20,$20,$20,$C0,$C0,$C0,$C0
-  .byte $20,$20,$20,$20,$C0,$C0,$C0,$C0,$20,$20,$20,$20,$C0,$C0,$C0,$C0
-  .byte $20,$20,$20,$20,$C0,$C0,$C0,$C0,$20,$20,$20,$20,$C0,$C0,$C0,$C0
-  .byte $20,$20,$20,$20,$C0,$C0,$C0,$C0,$20,$20,$20,$20,$C0,$C0,$C0,$C0
+  .byte $30,$20,$20,$20,$20,$20,$30,$20,$30,$20,$20,$20,$20,$20,$30,$20
+  .byte $30,$20,$20,$20,$20,$20,$30,$20,$30,$20,$20,$20,$20,$20,$30,$20
+  .byte $30,$20,$20,$20,$20,$20,$30,$20,$30,$20,$20,$20,$20,$20,$30,$20
+  .byte $30,$20,$20,$20,$20,$20,$30,$20,$30,$20,$20,$20,$20,$20,$30,$20
+  .byte $20,$20,$20,$C0,$C0,$C0,$C0,$C0,$20,$20,$20,$C0,$C0,$C0,$C0,$C0
+  .byte $20,$20,$20,$C0,$C0,$C0,$C0,$C0,$20,$20,$20,$C0,$C0,$C0,$C0,$C0
+  .byte $20,$20,$20,$C0,$C0,$C0,$C0,$C0,$20,$20,$20,$C0,$C0,$C0,$C0,$C0
+  .byte $20,$20,$20,$C0,$C0,$C0,$C0,$C0,$20,$20,$20,$C0,$C0,$C0,$C0,$C0
   .byte $30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30
   .byte $30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30
   .byte $30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30
   .byte $30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30
-  .byte $20,$20,$20,$20,$C0,$C0,$C0,$C0,$20,$20,$20,$20,$C0,$C0,$C0,$C0
-  .byte $20,$20,$20,$20,$C0,$C0,$C0,$C0,$20,$20,$20,$20,$C0,$C0,$C0,$C0
-  .byte $20,$20,$20,$20,$C0,$C0,$C0,$C0,$20,$20,$20,$20,$C0,$C0,$C0,$C0
-  .byte $20,$20,$20,$20,$C0,$C0,$C0,$C0,$20,$20,$20,$20,$C0,$C0,$C0,$C0
+  .byte $30,$20,$20,$20,$20,$20,$30,$20,$30,$20,$20,$20,$20,$20,$30,$20
+  .byte $30,$20,$20,$20,$20,$20,$30,$20,$30,$20,$20,$20,$20,$20,$30,$20
+  .byte $30,$20,$20,$20,$20,$20,$30,$20,$30,$20,$20,$20,$20,$20,$30,$20
+  .byte $30,$20,$20,$20,$20,$20,$30,$20,$30,$20,$20,$20,$20,$20,$30,$20
+  .byte $20,$20,$20,$C0,$C0,$C0,$C0,$C0,$20,$20,$20,$C0,$C0,$C0,$C0,$C0
+  .byte $20,$20,$20,$C0,$C0,$C0,$C0,$C0,$20,$20,$20,$C0,$C0,$C0,$C0,$C0
+  .byte $20,$20,$20,$C0,$C0,$C0,$C0,$C0,$20,$20,$20,$C0,$C0,$C0,$C0,$C0
+  .byte $20,$20,$20,$C0,$C0,$C0,$C0,$C0,$20,$20,$20,$C0,$C0,$C0,$C0,$C0
   .byte $30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30
   .byte $30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30
   .byte $30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30
   .byte $30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30
-  .byte $20,$20,$20,$20,$C0,$C0,$C0,$C0,$20,$20,$20,$20,$C0,$C0,$C0,$C0
-  .byte $20,$20,$20,$20,$C0,$C0,$C0,$C0,$20,$20,$20,$20,$C0,$C0,$C0,$C0
-  .byte $20,$20,$20,$20,$C0,$C0,$C0,$C0,$20,$20,$20,$20,$C0,$C0,$C0,$C0
-  .byte $20,$20,$20,$20,$C0,$C0,$C0,$C0,$20,$20,$20,$20,$C0,$C0,$C0,$C0
+  .byte $30,$20,$20,$20,$20,$20,$30,$20,$30,$20,$20,$20,$20,$20,$30,$20
+  .byte $30,$20,$20,$20,$20,$20,$30,$20,$30,$20,$20,$20,$20,$20,$30,$20
+  .byte $30,$20,$20,$20,$20,$20,$30,$20,$30,$20,$20,$20,$20,$20,$30,$20
+  .byte $30,$20,$20,$20,$20,$20,$30,$20,$30,$20,$20,$20,$20,$20,$30,$20
+  .byte $20,$20,$20,$C0,$C0,$C0,$C0,$C0,$20,$20,$20,$C0,$C0,$C0,$C0,$C0
+  .byte $20,$20,$20,$C0,$C0,$C0,$C0,$C0,$20,$20,$20,$C0,$C0,$C0,$C0,$C0
+  .byte $20,$20,$20,$C0,$C0,$C0,$C0,$C0,$20,$20,$20,$C0,$C0,$C0,$C0,$C0
+  .byte $20,$20,$20,$C0,$C0,$C0,$C0,$C0,$20,$20,$20,$C0,$C0,$C0,$C0,$C0
 SKY_P2:
-  .byte $00,$00,$00,$00,$00,$01,$01,$01,$00,$02,$02,$02,$02,$E2,$E2,$62
-  .byte $01,$01,$01,$07,$07,$05,$07,$07,$00,$00,$00,$C0,$C0,$40,$C0,$DF
-  .byte $00,$00,$08,$08,$09,$09,$09,$89,$00,$00,$00,$00,$FC,$FC,$54,$FC
-  .byte $00,$00,$07,$07,$05,$07,$07,$05,$00,$00,$E0,$E0,$60,$E0,$EF,$6F
-  .byte $01,$FD,$FD,$AD,$FD,$FD,$AD,$FD,$E2,$E2,$62,$E2,$EF,$6F,$EA,$EF
-  .byte $05,$07,$07,$05,$F7,$F7,$B5,$F7,$5F,$D5,$DF,$5F,$D5,$DF,$5F,$DF
-  .byte $89,$89,$BD,$BD,$AD,$BD,$BD,$BD,$FD,$55,$FD,$FD,$55,$FD,$FD,$FD
-  .byte $F7,$F7,$55,$F7,$F7,$55,$F7,$F7,$EB,$EF,$6F,$EB,$EF,$6F,$EB,$EF
-  .byte $00,$00,$00,$00,$00,$07,$07,$05,$00,$08,$08,$08,$08,$88,$88,$88
-  .byte $04,$04,$04,$1F,$1F,$15,$1F,$1F,$00,$00,$00,$00,$00,$00,$00,$7E
-  .byte $00,$00,$20,$20,$27,$27,$25,$27,$00,$00,$00,$00,$F0,$F0,$50,$F0
-  .byte $00,$00,$1F,$1F,$15,$1F,$1F,$15,$00,$00,$80,$80,$80,$80,$BC,$BC
-  .byte $07,$F7,$F5,$B7,$F7,$F5,$B7,$F7,$88,$88,$88,$88,$BF,$BF,$AA,$BF
-  .byte $15,$1F,$1F,$15,$DF,$DF,$D5,$DF,$7E,$56,$7E,$7E,$56,$7E,$7E,$7E
-  .byte $27,$25,$F7,$F7,$B5,$F7,$F7,$F7,$F7,$57,$F5,$F7,$57,$F5,$F7,$F7
-  .byte $DF,$DF,$55,$DF,$DF,$55,$DF,$DF,$AC,$BF,$BF,$AE,$BF,$BF,$AE,$BF
-  .byte $00,$00,$00,$00,$00,$1E,$1E,$16,$00,$20,$20,$20,$20,$20,$20,$20
-  .byte $10,$10,$10,$7C,$7C,$54,$7C,$7D,$00,$00,$00,$00,$00,$00,$00,$F8
-  .byte $00,$00,$80,$80,$9F,$9F,$95,$9F,$00,$00,$00,$00,$C0,$C0,$40,$C0
-  .byte $00,$00,$7E,$7E,$56,$7E,$7E,$56,$00,$00,$00,$00,$00,$00,$F0,$F0
-  .byte $1E,$DE,$D6,$DE,$DE,$D6,$DE,$DE,$20,$20,$20,$20,$FF,$FF,$AB,$FF
-  .byte $55,$7D,$7D,$55,$7D,$7D,$55,$7D,$F8,$58,$FB,$FB,$5A,$FB,$FB,$FB
-  .byte $9F,$95,$DF,$DF,$D5,$DF,$DF,$DF,$DF,$5F,$D5,$DF,$5F,$D5,$DF,$DF
-  .byte $7E,$7E,$56,$7E,$7E,$56,$7E,$7E,$B0,$FF,$FF,$BA,$FF,$FF,$BA,$FF
-  .byte $00,$00,$00,$00,$00,$78,$78,$58,$00,$80,$80,$81,$81,$81,$81,$81
-  .byte $40,$40,$40,$F0,$F0,$50,$F0,$F7,$00,$00,$02,$02,$02,$02,$02,$E2
-  .byte $00,$00,$00,$00,$7F,$7F,$55,$7F,$00,$00,$01,$01,$01,$01,$01,$01
-  .byte $00,$00,$F8,$F8,$58,$F8,$FB,$5B,$00,$00,$00,$00,$00,$00,$C0,$C0
-  .byte $78,$78,$58,$78,$7B,$5B,$7A,$7B,$81,$81,$81,$81,$FD,$FD,$AD,$FD
-  .byte $57,$F5,$F7,$57,$F5,$F7,$57,$F7,$E2,$62,$EF,$EF,$6B,$EF,$EF,$EF
-  .byte $7F,$55,$7F,$7F,$55,$7F,$7F,$7F,$7D,$7D,$55,$7D,$7D,$55,$7D,$7D
-  .byte $FA,$FB,$5B,$FA,$FB,$5B,$FA,$FB,$C0,$FF,$FF,$EB,$FF,$FF,$EB,$FF
+  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$78,$78,$58,$78
+  .byte $00,$00,$00,$00,$00,$40,$40,$40,$10,$10,$78,$78,$58,$78,$78,$59
+  .byte $00,$00,$00,$00,$00,$00,$00,$F8,$00,$00,$00,$00,$00,$03,$03,$02
+  .byte $00,$00,$00,$00,$00,$F0,$F0,$B0,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $7C,$7C,$54,$7C,$7C,$54,$7C,$7E,$78,$58,$79,$79,$59,$79,$79,$79
+  .byte $40,$40,$F8,$F8,$58,$F8,$F8,$F8,$79,$79,$59,$79,$79,$59,$79,$79
+  .byte $F8,$58,$F8,$F8,$58,$F8,$FC,$FD,$23,$23,$22,$23,$F3,$F2,$B3,$F3
+  .byte $F0,$F0,$B0,$F0,$F0,$B0,$F0,$F0,$00,$F8,$F8,$A8,$F8,$F8,$A8,$F8
+  .byte $7E,$7F,$7F,$FF,$FF,$FF,$FF,$FF,$F9,$F9,$F9,$F9,$FF,$FF,$FF,$FF
+  .byte $F8,$FA,$FA,$FF,$FF,$FF,$FF,$FF,$79,$79,$F9,$FF,$FF,$FF,$FF,$FF
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$F3,$F3,$F3,$FF,$FF,$FF,$FF,$FF
+  .byte $F8,$FA,$FF,$FF,$FF,$FF,$FF,$FF,$F8,$F8,$F8,$F8,$FF,$FF,$FF,$FF
+  .byte $00,$00,$00,$00,$01,$01,$01,$01,$00,$00,$00,$00,$E0,$E1,$61,$E1
+  .byte $00,$00,$01,$01,$01,$01,$01,$01,$40,$40,$E0,$E0,$60,$E0,$E0,$67
+  .byte $00,$00,$00,$00,$00,$00,$00,$E0,$00,$00,$00,$00,$00,$0F,$0F,$0A
+  .byte $00,$00,$00,$00,$00,$C0,$C0,$C0,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $F1,$F1,$51,$F1,$F1,$51,$F1,$F9,$E1,$61,$E7,$E7,$65,$E7,$E7,$E7
+  .byte $01,$01,$E1,$E1,$61,$E1,$E1,$E1,$E7,$E5,$67,$E7,$E5,$67,$E7,$E7
+  .byte $E0,$60,$E0,$E0,$63,$E3,$F2,$F7,$8F,$8F,$8A,$8F,$CF,$CA,$CF,$CF
+  .byte $C0,$C3,$C3,$C2,$C3,$C3,$C2,$C3,$01,$E1,$E1,$A1,$E1,$E1,$A1,$E1
+  .byte $FB,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$E7,$E7,$E7,$E7,$FF,$FF,$FF,$FF
+  .byte $E1,$E9,$EB,$FF,$FF,$FF,$FF,$FF,$E7,$E7,$E7,$FF,$FF,$FF,$FF,$FF
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$CF,$CF,$CF,$FF,$FF,$FF,$FF,$FF
+  .byte $E3,$EB,$FF,$FF,$FF,$FF,$FF,$FF,$E1,$E1,$E1,$E3,$FF,$FF,$FF,$FF
+  .byte $00,$00,$00,$00,$07,$07,$05,$07,$00,$00,$00,$00,$80,$84,$84,$84
+  .byte $01,$01,$07,$07,$05,$07,$07,$05,$00,$00,$80,$80,$80,$80,$80,$9F
+  .byte $00,$00,$00,$00,$00,$00,$00,$80,$00,$00,$00,$00,$00,$3F,$3F,$2B
+  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $C7,$C5,$47,$C7,$C5,$47,$C7,$E7,$84,$84,$9F,$9F,$95,$9F,$9F,$9F
+  .byte $07,$07,$85,$87,$87,$85,$87,$87,$9F,$95,$9F,$9F,$95,$9F,$9F,$9F
+  .byte $82,$82,$82,$82,$8F,$8F,$CB,$DF,$3F,$3F,$2B,$3F,$3F,$2B,$3F,$3F
+  .byte $00,$0F,$0F,$0A,$0F,$0F,$0A,$0F,$07,$87,$85,$87,$87,$85,$87,$87
+  .byte $EF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$9F,$9F,$9F,$9F,$FF,$FF,$FF,$FF
+  .byte $87,$A7,$AF,$FF,$FF,$FF,$FF,$FF,$9F,$9F,$9F,$FF,$FF,$FF,$FF,$FF
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$3F,$3F,$3F,$FF,$FF,$FF,$FF,$FF
+  .byte $8F,$AF,$FF,$FF,$FF,$FF,$FF,$FF,$87,$87,$87,$8F,$FF,$FF,$FF,$FF
+  .byte $00,$00,$00,$00,$1E,$1E,$16,$1E,$00,$00,$00,$00,$00,$10,$10,$10
+  .byte $04,$04,$1E,$1E,$16,$1E,$1E,$16,$00,$00,$00,$00,$00,$00,$00,$7E
+  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$FC,$FC,$AC
+  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $1E,$16,$1E,$1E,$16,$1E,$1E,$9E,$10,$10,$7E,$7E,$56,$7E,$7E,$7E
+  .byte $1E,$1E,$16,$1E,$1E,$16,$1E,$1E,$7E,$56,$7E,$7E,$56,$7E,$7F,$7F
+  .byte $08,$08,$08,$08,$3C,$3C,$2C,$7C,$FC,$FC,$AC,$FC,$FC,$AC,$FC,$FC
+  .byte $00,$3E,$3E,$2A,$3E,$3E,$2A,$3E,$1F,$1F,$15,$1F,$1F,$15,$1F,$1F
+  .byte $BE,$FE,$FE,$FE,$FF,$FF,$FF,$FF,$7E,$7E,$7E,$7F,$FF,$FF,$FF,$FF
+  .byte $1E,$9E,$BE,$FF,$FF,$FF,$FF,$FF,$7F,$7F,$7F,$FF,$FF,$FF,$FF,$FF
+  .byte $FC,$FC,$FC,$FF,$FF,$FF,$FF,$FF,$FE,$FE,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $3E,$BE,$FE,$FE,$FF,$FF,$FF,$FF,$1F,$1F,$1F,$3F,$FF,$FF,$FF,$FF
 SKY_C2:
-  .byte $70,$70,$70,$50,$50,$50,$50,$50,$70,$70,$70,$50,$50,$50,$50,$50
-  .byte $70,$70,$70,$50,$50,$50,$50,$50,$70,$70,$70,$50,$50,$50,$50,$50
-  .byte $70,$70,$70,$50,$50,$50,$50,$50,$70,$70,$70,$50,$50,$50,$50,$50
-  .byte $70,$70,$70,$50,$50,$50,$50,$50,$70,$70,$70,$50,$50,$50,$50,$50
-  .byte $50,$40,$40,$40,$40,$40,$40,$40,$50,$40,$40,$40,$40,$40,$40,$40
-  .byte $50,$40,$40,$40,$40,$40,$40,$40,$50,$40,$40,$40,$40,$40,$40,$40
-  .byte $50,$40,$40,$40,$40,$40,$40,$40,$50,$40,$40,$40,$40,$40,$40,$40
-  .byte $50,$40,$40,$40,$40,$40,$40,$40,$50,$40,$40,$40,$40,$40,$40,$40
-  .byte $70,$70,$70,$50,$50,$50,$50,$50,$70,$70,$70,$50,$50,$50,$50,$50
-  .byte $70,$70,$70,$50,$50,$50,$50,$50,$70,$70,$70,$50,$50,$50,$50,$50
-  .byte $70,$70,$70,$50,$50,$50,$50,$50,$70,$70,$70,$50,$50,$50,$50,$50
-  .byte $70,$70,$70,$50,$50,$50,$50,$50,$70,$70,$70,$50,$50,$50,$50,$50
-  .byte $50,$40,$40,$40,$40,$40,$40,$40,$50,$40,$40,$40,$40,$40,$40,$40
-  .byte $50,$40,$40,$40,$40,$40,$40,$40,$50,$40,$40,$40,$40,$40,$40,$40
-  .byte $50,$40,$40,$40,$40,$40,$40,$40,$50,$40,$40,$40,$40,$40,$40,$40
-  .byte $50,$40,$40,$40,$40,$40,$40,$40,$50,$40,$40,$40,$40,$40,$40,$40
-  .byte $70,$70,$70,$50,$50,$50,$50,$50,$70,$70,$70,$50,$50,$50,$50,$50
-  .byte $70,$70,$70,$50,$50,$50,$50,$50,$70,$70,$70,$50,$50,$50,$50,$50
-  .byte $70,$70,$70,$50,$50,$50,$50,$50,$70,$70,$70,$50,$50,$50,$50,$50
-  .byte $70,$70,$70,$50,$50,$50,$50,$50,$70,$70,$70,$50,$50,$50,$50,$50
-  .byte $50,$40,$40,$40,$40,$40,$40,$40,$50,$40,$40,$40,$40,$40,$40,$40
-  .byte $50,$40,$40,$40,$40,$40,$40,$40,$50,$40,$40,$40,$40,$40,$40,$40
-  .byte $50,$40,$40,$40,$40,$40,$40,$40,$50,$40,$40,$40,$40,$40,$40,$40
-  .byte $50,$40,$40,$40,$40,$40,$40,$40,$50,$40,$40,$40,$40,$40,$40,$40
-  .byte $70,$70,$70,$50,$50,$50,$50,$50,$70,$70,$70,$50,$50,$50,$50,$50
-  .byte $70,$70,$70,$50,$50,$50,$50,$50,$70,$70,$70,$50,$50,$50,$50,$50
-  .byte $70,$70,$70,$50,$50,$50,$50,$50,$70,$70,$70,$50,$50,$50,$50,$50
-  .byte $70,$70,$70,$50,$50,$50,$50,$50,$70,$70,$70,$50,$50,$50,$50,$50
-  .byte $50,$40,$40,$40,$40,$40,$40,$40,$50,$40,$40,$40,$40,$40,$40,$40
-  .byte $50,$40,$40,$40,$40,$40,$40,$40,$50,$40,$40,$40,$40,$40,$40,$40
-  .byte $50,$40,$40,$40,$40,$40,$40,$40,$50,$40,$40,$40,$40,$40,$40,$40
-  .byte $50,$40,$40,$40,$40,$40,$40,$40,$50,$40,$40,$40,$40,$40,$40,$40
+  .byte $70,$70,$70,$70,$50,$50,$50,$50,$70,$70,$70,$70,$50,$50,$50,$50
+  .byte $70,$70,$70,$70,$50,$50,$50,$50,$70,$70,$70,$70,$50,$50,$50,$50
+  .byte $70,$70,$70,$70,$50,$50,$50,$50,$70,$70,$70,$70,$50,$50,$50,$50
+  .byte $70,$70,$70,$70,$50,$50,$50,$50,$70,$70,$70,$70,$50,$50,$50,$50
+  .byte $50,$50,$50,$50,$40,$40,$40,$C0,$50,$50,$50,$50,$40,$40,$40,$C0
+  .byte $50,$50,$50,$50,$40,$40,$40,$C0,$50,$50,$50,$50,$40,$40,$40,$C0
+  .byte $50,$50,$50,$50,$40,$40,$40,$C0,$50,$50,$50,$50,$40,$40,$40,$C0
+  .byte $50,$50,$50,$50,$40,$40,$40,$C0,$50,$50,$50,$50,$40,$40,$40,$C0
+  .byte $C0,$C0,$20,$20,$C0,$C0,$C0,$C0,$C0,$C0,$20,$20,$C0,$C0,$C0,$C0
+  .byte $C0,$C0,$20,$20,$C0,$C0,$C0,$C0,$C0,$C0,$20,$20,$C0,$C0,$C0,$C0
+  .byte $C0,$C0,$20,$20,$C0,$C0,$C0,$C0,$C0,$C0,$20,$20,$C0,$C0,$C0,$C0
+  .byte $C0,$C0,$20,$20,$C0,$C0,$C0,$C0,$C0,$C0,$20,$20,$C0,$C0,$C0,$C0
+  .byte $70,$70,$70,$70,$50,$50,$50,$50,$70,$70,$70,$70,$50,$50,$50,$50
+  .byte $70,$70,$70,$70,$50,$50,$50,$50,$70,$70,$70,$70,$50,$50,$50,$50
+  .byte $70,$70,$70,$70,$50,$50,$50,$50,$70,$70,$70,$70,$50,$50,$50,$50
+  .byte $70,$70,$70,$70,$50,$50,$50,$50,$70,$70,$70,$70,$50,$50,$50,$50
+  .byte $50,$50,$50,$50,$40,$40,$40,$C0,$50,$50,$50,$50,$40,$40,$40,$C0
+  .byte $50,$50,$50,$50,$40,$40,$40,$C0,$50,$50,$50,$50,$40,$40,$40,$C0
+  .byte $50,$50,$50,$50,$40,$40,$40,$C0,$50,$50,$50,$50,$40,$40,$40,$C0
+  .byte $50,$50,$50,$50,$40,$40,$40,$C0,$50,$50,$50,$50,$40,$40,$40,$C0
+  .byte $C0,$C0,$20,$20,$C0,$C0,$C0,$C0,$C0,$C0,$20,$20,$C0,$C0,$C0,$C0
+  .byte $C0,$C0,$20,$20,$C0,$C0,$C0,$C0,$C0,$C0,$20,$20,$C0,$C0,$C0,$C0
+  .byte $C0,$C0,$20,$20,$C0,$C0,$C0,$C0,$C0,$C0,$20,$20,$C0,$C0,$C0,$C0
+  .byte $C0,$C0,$20,$20,$C0,$C0,$C0,$C0,$C0,$C0,$20,$20,$C0,$C0,$C0,$C0
+  .byte $70,$70,$70,$70,$50,$50,$50,$50,$70,$70,$70,$70,$50,$50,$50,$50
+  .byte $70,$70,$70,$70,$50,$50,$50,$50,$70,$70,$70,$70,$50,$50,$50,$50
+  .byte $70,$70,$70,$70,$50,$50,$50,$50,$70,$70,$70,$70,$50,$50,$50,$50
+  .byte $70,$70,$70,$70,$50,$50,$50,$50,$70,$70,$70,$70,$50,$50,$50,$50
+  .byte $50,$50,$50,$50,$40,$40,$40,$C0,$50,$50,$50,$50,$40,$40,$40,$C0
+  .byte $50,$50,$50,$50,$40,$40,$40,$C0,$50,$50,$50,$50,$40,$40,$40,$C0
+  .byte $50,$50,$50,$50,$40,$40,$40,$C0,$50,$50,$50,$50,$40,$40,$40,$C0
+  .byte $50,$50,$50,$50,$40,$40,$40,$C0,$50,$50,$50,$50,$40,$40,$40,$C0
+  .byte $C0,$C0,$20,$20,$C0,$C0,$C0,$C0,$C0,$C0,$20,$20,$C0,$C0,$C0,$C0
+  .byte $C0,$C0,$20,$20,$C0,$C0,$C0,$C0,$C0,$C0,$20,$20,$C0,$C0,$C0,$C0
+  .byte $C0,$C0,$20,$20,$C0,$C0,$C0,$C0,$C0,$C0,$20,$20,$C0,$C0,$C0,$C0
+  .byte $C0,$C0,$20,$20,$C0,$C0,$C0,$C0,$C0,$C0,$20,$20,$C0,$C0,$C0,$C0
+  .byte $70,$70,$70,$70,$50,$50,$50,$50,$70,$70,$70,$70,$50,$50,$50,$50
+  .byte $70,$70,$70,$70,$50,$50,$50,$50,$70,$70,$70,$70,$50,$50,$50,$50
+  .byte $70,$70,$70,$70,$50,$50,$50,$50,$70,$70,$70,$70,$50,$50,$50,$50
+  .byte $70,$70,$70,$70,$50,$50,$50,$50,$70,$70,$70,$70,$50,$50,$50,$50
+  .byte $50,$50,$50,$50,$40,$40,$40,$C0,$50,$50,$50,$50,$40,$40,$40,$C0
+  .byte $50,$50,$50,$50,$40,$40,$40,$C0,$50,$50,$50,$50,$40,$40,$40,$C0
+  .byte $50,$50,$50,$50,$40,$40,$40,$C0,$50,$50,$50,$50,$40,$40,$40,$C0
+  .byte $50,$50,$50,$50,$40,$40,$40,$C0,$50,$50,$50,$50,$40,$40,$40,$C0
+  .byte $C0,$C0,$20,$20,$C0,$C0,$C0,$C0,$C0,$C0,$20,$20,$C0,$C0,$C0,$C0
+  .byte $C0,$C0,$20,$20,$C0,$C0,$C0,$C0,$C0,$C0,$20,$20,$C0,$C0,$C0,$C0
+  .byte $C0,$C0,$20,$20,$C0,$C0,$C0,$C0,$C0,$C0,$20,$20,$C0,$C0,$C0,$C0
+  .byte $C0,$C0,$20,$20,$C0,$C0,$C0,$C0,$C0,$C0,$20,$20,$C0,$C0,$C0,$C0
 SKY_P3:
-  .byte $00,$00,$00,$00,$1A,$1C,$1C,$1C,$00,$00,$00,$00,$00,$00,$34,$38
-  .byte $00,$00,$68,$70,$70,$70,$70,$70,$00,$00,$00,$01,$01,$01,$01,$01
-  .byte $00,$00,$00,$A8,$FE,$F7,$C3,$C3,$00,$00,$00,$00,$00,$C0,$C0,$C0
-  .byte $00,$00,$00,$00,$0D,$0E,$0E,$0E,$00,$00,$00,$00,$00,$00,$00,$1A
-  .byte $1C,$1C,$1C,$1C,$1C,$1C,$FF,$FF,$38,$38,$38,$38,$38,$38,$FF,$FF
-  .byte $70,$70,$70,$70,$70,$70,$FF,$FF,$D1,$E1,$E1,$E1,$E1,$E1,$FF,$FF
-  .byte $C3,$C3,$C3,$C3,$C3,$C3,$FF,$FF,$80,$86,$87,$87,$87,$87,$FF,$FF
-  .byte $0E,$8E,$0E,$0E,$0E,$0E,$FF,$FF,$1C,$1C,$1C,$1C,$1C,$1C,$FF,$FF
-  .byte $00,$00,$00,$00,$68,$70,$70,$70,$00,$00,$01,$01,$01,$01,$D1,$E1
-  .byte $00,$00,$A0,$C0,$C0,$C0,$C0,$C0,$00,$00,$00,$06,$07,$07,$07,$07
-  .byte $00,$00,$00,$A0,$F8,$DF,$0F,$0F,$00,$00,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$34,$38,$38,$38,$00,$00,$00,$00,$00,$00,$00,$68
-  .byte $70,$70,$70,$70,$70,$70,$FF,$FF,$E1,$E1,$E1,$E1,$E1,$E1,$FF,$FF
-  .byte $C3,$C3,$C3,$C3,$C3,$C3,$FF,$FF,$47,$87,$87,$87,$87,$87,$FF,$FF
-  .byte $0E,$0E,$0E,$0E,$0E,$0E,$FF,$FF,$00,$1A,$1C,$1C,$1C,$1C,$FF,$FF
-  .byte $38,$38,$38,$38,$38,$38,$FF,$FF,$70,$70,$70,$70,$70,$70,$FF,$FF
-  .byte $00,$00,$00,$00,$A0,$C0,$C3,$C3,$00,$00,$06,$07,$07,$07,$47,$87
-  .byte $00,$00,$80,$00,$00,$00,$00,$00,$00,$00,$00,$1A,$1F,$1F,$1C,$1C
-  .byte $00,$00,$00,$80,$E0,$7C,$3C,$3C,$00,$00,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$D0,$E0,$E0,$E1,$00,$00,$00,$00,$01,$01,$01,$A1
-  .byte $C3,$C3,$C3,$C3,$C3,$C3,$FF,$FF,$87,$87,$87,$87,$87,$87,$FF,$FF
-  .byte $0D,$0E,$0E,$0E,$0E,$0E,$FF,$FF,$1C,$1C,$1C,$1C,$1C,$1C,$FF,$FF
-  .byte $38,$38,$38,$38,$38,$38,$FF,$FF,$00,$68,$70,$70,$70,$70,$FF,$FF
-  .byte $E1,$E1,$E1,$E1,$E1,$E1,$FF,$FF,$C1,$C1,$C1,$C1,$C1,$C1,$FF,$FF
-  .byte $00,$00,$00,$00,$80,$00,$0D,$0E,$00,$00,$1A,$1C,$1C,$1C,$1C,$1C
-  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$6A,$7F,$7D,$70,$70
-  .byte $00,$00,$00,$00,$80,$F0,$F0,$F0,$00,$00,$00,$00,$03,$03,$03,$03
-  .byte $00,$00,$00,$00,$40,$80,$80,$86,$00,$00,$00,$00,$06,$07,$07,$87
-  .byte $0E,$0E,$0E,$0E,$0E,$0E,$FF,$FF,$1C,$1C,$1C,$1C,$1C,$1C,$FF,$FF
-  .byte $34,$38,$38,$38,$38,$38,$FF,$FF,$70,$70,$70,$70,$70,$70,$FF,$FF
-  .byte $E0,$E1,$E1,$E1,$E1,$E1,$FF,$FF,$03,$A3,$C3,$C3,$C3,$C3,$FF,$FF
-  .byte $87,$87,$87,$87,$87,$87,$FF,$FF,$07,$07,$07,$07,$07,$07,$FF,$FF
+  .byte $00,$00,$00,$00,$00,$00,$1A,$1C,$00,$00,$00,$00,$0D,$0E,$0E,$0E
+  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$37,$3F,$3C,$38,$38
+  .byte $00,$00,$00,$80,$E0,$7D,$1E,$0E,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$01,$01,$01,$01,$00,$00,$00,$00,$A0,$C0,$C0,$C0
+  .byte $1C,$1C,$1C,$1C,$1C,$1E,$1F,$3F,$0E,$0E,$0E,$0E,$8E,$AE,$FE,$FE
+  .byte $00,$1A,$1C,$1C,$1C,$1C,$1E,$1F,$38,$38,$3A,$3A,$3F,$FF,$FF,$FF
+  .byte $0E,$0E,$0E,$8E,$CE,$FE,$FE,$FF,$0D,$0E,$0E,$0E,$0E,$0E,$0E,$0F
+  .byte $01,$01,$01,$01,$01,$81,$A1,$F1,$C0,$C0,$C0,$C0,$C0,$C0,$C0,$C0
+  .byte $BF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FE,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $BF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$C0,$C1,$CF,$FF,$FF,$FF,$FF,$FF
+  .byte $00,$00,$00,$00,$00,$00,$68,$70,$00,$00,$00,$00,$34,$38,$38,$38
+  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$DE,$FF,$F1,$E0,$E0
+  .byte $00,$00,$00,$00,$80,$F4,$78,$38,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$06,$07,$07,$07,$00,$00,$00,$00,$80,$00,$00,$00
+  .byte $70,$70,$70,$70,$72,$7A,$7F,$FF,$38,$38,$38,$38,$38,$B8,$F8,$F8
+  .byte $00,$68,$70,$70,$70,$73,$7B,$7F,$E0,$E0,$E8,$EA,$FF,$FF,$FF,$FF
+  .byte $38,$38,$38,$38,$38,$F8,$F8,$FC,$34,$38,$38,$38,$38,$3A,$3A,$3F
+  .byte $07,$07,$07,$07,$07,$07,$87,$C7,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FA,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$02,$07,$3F,$FF,$FF,$FF,$FF,$FF
+  .byte $00,$00,$00,$00,$00,$00,$A0,$C0,$00,$00,$00,$00,$D0,$E0,$E0,$E0
+  .byte $00,$00,$00,$03,$03,$03,$03,$03,$00,$00,$00,$78,$FE,$C7,$81,$80
+  .byte $00,$00,$00,$00,$00,$D0,$E0,$E0,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$1A,$1C,$1C,$1C,$00,$00,$00,$00,$00,$00,$01,$01
+  .byte $C0,$C0,$C0,$C0,$C8,$EA,$FF,$FF,$E0,$E1,$E1,$E1,$E1,$E1,$E1,$E1
+  .byte $03,$A3,$C3,$C3,$C3,$CF,$EF,$FF,$80,$80,$A0,$A8,$FC,$FF,$FF,$FF
+  .byte $E0,$E0,$E0,$E0,$E0,$E0,$E0,$F0,$D0,$E0,$E0,$E0,$E0,$E8,$EA,$FF
+  .byte $1C,$1C,$1C,$1C,$1C,$1C,$1C,$1C,$01,$01,$01,$01,$01,$01,$01,$03
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$EB,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $FC,$FC,$FC,$FF,$FF,$FF,$FF,$FF,$0B,$1F,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $00,$00,$00,$00,$03,$03,$83,$03,$00,$00,$00,$00,$40,$80,$80,$80
+  .byte $00,$00,$00,$0D,$0F,$0F,$0E,$0E,$00,$00,$00,$E0,$F8,$1F,$07,$03
+  .byte $00,$00,$00,$00,$00,$40,$80,$80,$00,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$68,$70,$70,$70,$00,$00,$00,$00,$00,$00,$06,$07
+  .byte $03,$03,$03,$03,$23,$AB,$FF,$FF,$80,$86,$87,$87,$87,$87,$87,$87
+  .byte $0E,$8E,$0E,$0E,$0F,$3F,$BF,$FF,$03,$03,$83,$A3,$F3,$FF,$FF,$FF
+  .byte $83,$83,$83,$83,$83,$83,$83,$C3,$40,$80,$80,$80,$80,$A0,$A8,$FC
+  .byte $70,$70,$70,$70,$70,$70,$70,$70,$07,$07,$07,$07,$07,$07,$07,$0F
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$AF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+  .byte $F0,$F0,$F3,$FF,$FF,$FF,$FF,$FF,$2F,$7F,$FF,$FF,$FF,$FF,$FF,$FF
 SKY_C3:
-  .byte $B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0
-  .byte $B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0
-  .byte $B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0
-  .byte $B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0
-  .byte $A0,$A0,$A0,$90,$90,$60,$60,$60,$A0,$A0,$A0,$90,$90,$60,$60,$60
-  .byte $A0,$A0,$A0,$90,$90,$60,$60,$60,$A0,$A0,$A0,$90,$90,$60,$60,$60
-  .byte $A0,$A0,$A0,$90,$90,$60,$60,$60,$A0,$A0,$A0,$90,$90,$60,$60,$60
-  .byte $A0,$A0,$A0,$90,$90,$60,$60,$60,$A0,$A0,$A0,$90,$90,$60,$60,$60
-  .byte $B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0
-  .byte $B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0
-  .byte $B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0
-  .byte $B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0
-  .byte $A0,$A0,$A0,$90,$90,$60,$60,$60,$A0,$A0,$A0,$90,$90,$60,$60,$60
-  .byte $A0,$A0,$A0,$90,$90,$60,$60,$60,$A0,$A0,$A0,$90,$90,$60,$60,$60
-  .byte $A0,$A0,$A0,$90,$90,$60,$60,$60,$A0,$A0,$A0,$90,$90,$60,$60,$60
-  .byte $A0,$A0,$A0,$90,$90,$60,$60,$60,$A0,$A0,$A0,$90,$90,$60,$60,$60
-  .byte $B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0
-  .byte $B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0
-  .byte $B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0
-  .byte $B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0
-  .byte $A0,$A0,$A0,$90,$90,$60,$60,$60,$A0,$A0,$A0,$90,$90,$60,$60,$60
-  .byte $A0,$A0,$A0,$90,$90,$60,$60,$60,$A0,$A0,$A0,$90,$90,$60,$60,$60
-  .byte $A0,$A0,$A0,$90,$90,$60,$60,$60,$A0,$A0,$A0,$90,$90,$60,$60,$60
-  .byte $A0,$A0,$A0,$90,$90,$60,$60,$60,$A0,$A0,$A0,$90,$90,$60,$60,$60
-  .byte $B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0
-  .byte $B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0
-  .byte $B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0
-  .byte $B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$A0
-  .byte $A0,$A0,$A0,$90,$90,$60,$60,$60,$A0,$A0,$A0,$90,$90,$60,$60,$60
-  .byte $A0,$A0,$A0,$90,$90,$60,$60,$60,$A0,$A0,$A0,$90,$90,$60,$60,$60
-  .byte $A0,$A0,$A0,$90,$90,$60,$60,$60,$A0,$A0,$A0,$90,$90,$60,$60,$60
-  .byte $A0,$A0,$A0,$90,$90,$60,$60,$60,$A0,$A0,$A0,$90,$90,$60,$60,$60
-
-; the stars of the sky, rows 2-5
-STAR_NT:
-  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$67,$60,$00,$65,$00,$00,$63,$66,$64,$00,$00,$63,$65,$65,$00,$00,$00,$00,$00,$61
-  .byte $00,$61,$00,$00,$65,$00,$00,$65,$00,$00,$63,$00,$00,$00,$00,$00,$62,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$67,$00
-  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$61,$00,$00,$00,$00,$00,$00,$00,$00,$00,$62,$00,$00
-  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$65,$00,$00,$00,$00,$00,$67,$00,$00,$00,$00,$00,$00,$60,$00,$00,$00
+  .byte $B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0
+  .byte $B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0
+  .byte $B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0
+  .byte $B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0
+  .byte $A0,$A0,$A0,$A0,$90,$90,$90,$90,$A0,$A0,$A0,$A0,$90,$90,$90,$90
+  .byte $A0,$A0,$A0,$A0,$90,$90,$90,$90,$A0,$A0,$A0,$A0,$90,$90,$90,$90
+  .byte $A0,$A0,$A0,$A0,$90,$90,$90,$90,$A0,$A0,$A0,$A0,$90,$90,$90,$90
+  .byte $A0,$A0,$A0,$A0,$90,$90,$90,$90,$A0,$A0,$A0,$A0,$90,$90,$90,$90
+  .byte $60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60
+  .byte $60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60
+  .byte $60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60
+  .byte $60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60
+  .byte $B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0
+  .byte $B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0
+  .byte $B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0
+  .byte $B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0
+  .byte $A0,$A0,$A0,$A0,$90,$90,$90,$90,$A0,$A0,$A0,$A0,$90,$90,$90,$90
+  .byte $A0,$A0,$A0,$A0,$90,$90,$90,$90,$A0,$A0,$A0,$A0,$90,$90,$90,$90
+  .byte $A0,$A0,$A0,$A0,$90,$90,$90,$90,$A0,$A0,$A0,$A0,$90,$90,$90,$90
+  .byte $A0,$A0,$A0,$A0,$90,$90,$90,$90,$A0,$A0,$A0,$A0,$90,$90,$90,$90
+  .byte $60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60
+  .byte $60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60
+  .byte $60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60
+  .byte $60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60
+  .byte $B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0
+  .byte $B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0
+  .byte $B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0
+  .byte $B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0
+  .byte $A0,$A0,$A0,$A0,$90,$90,$90,$90,$A0,$A0,$A0,$A0,$90,$90,$90,$90
+  .byte $A0,$A0,$A0,$A0,$90,$90,$90,$90,$A0,$A0,$A0,$A0,$90,$90,$90,$90
+  .byte $A0,$A0,$A0,$A0,$90,$90,$90,$90,$A0,$A0,$A0,$A0,$90,$90,$90,$90
+  .byte $A0,$A0,$A0,$A0,$90,$90,$90,$90,$A0,$A0,$A0,$A0,$90,$90,$90,$90
+  .byte $60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60
+  .byte $60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60
+  .byte $60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60
+  .byte $60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60
+  .byte $B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0
+  .byte $B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0
+  .byte $B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0
+  .byte $B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0,$B0,$B0,$B0,$B0,$B0,$B0,$A0,$A0
+  .byte $A0,$A0,$A0,$A0,$90,$90,$90,$90,$A0,$A0,$A0,$A0,$90,$90,$90,$90
+  .byte $A0,$A0,$A0,$A0,$90,$90,$90,$90,$A0,$A0,$A0,$A0,$90,$90,$90,$90
+  .byte $A0,$A0,$A0,$A0,$90,$90,$90,$90,$A0,$A0,$A0,$A0,$90,$90,$90,$90
+  .byte $A0,$A0,$A0,$A0,$90,$90,$90,$90,$A0,$A0,$A0,$A0,$90,$90,$90,$90
+  .byte $60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60
+  .byte $60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60
+  .byte $60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60
+  .byte $60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60,$60
 
 ; big letters of the title: E X R I O N, 4 tiles each (192-215)
 BIG_P:
@@ -4122,88 +4384,70 @@ GFX_LOAD:
   .byte 2, $00,$71, <512,>512, $F0,0
   .byte 1, $00,$53, <72,>72, <TILE_PAT,>TILE_PAT
   .byte 1, $00,$73, <72,>72, <TILE_COL,>TILE_COL
-  .byte 2, $00,$4C, <64,>64, $FF,0
-  .byte 2, $00,$54, <64,>64, $FF,0
+  .byte 2, $20,$4F, <32,>32, $FF,0
+  .byte 2, $40,$57, <56,>56, $FF,0
   .byte 1, $00,$46, <192,>192, <BIG_P,>BIG_P
   .byte 1, $00,$66, <192,>192, <BIG_C,>BIG_C
   .byte 0
 
 ; ground: depth of every line (16384 / (line + 6), the bands are its bit 5)
-NLINES = 120
+NLINES = 88
 DEPTH:
   .byte $AB,$25,$00,$1C,$66,$D1,$55,$EC,$92,$44,$00,$C4,$8E,$5E,$33,$0C
   .byte $E9,$C8,$AB,$8F,$76,$5F,$49,$35,$22,$11,$00,$F0,$E2,$D4,$C7,$BB
   .byte $AF,$A4,$9A,$90,$86,$7D,$74,$6C,$64,$5D,$55,$4E,$48,$41,$3B,$35
   .byte $2F,$2A,$25,$1F,$1A,$16,$11,$0D,$08,$04,$00,$FC,$F8,$F5,$F1,$ED
   .byte $EA,$E7,$E4,$E0,$DD,$DA,$D8,$D5,$D2,$CF,$CD,$CA,$C8,$C5,$C3,$C1
-  .byte $BF,$BC,$BA,$B8,$B6,$B4,$B2,$B0,$AE,$AC,$AB,$A9,$A7,$A5,$A4,$A2
-  .byte $A1,$9F,$9E,$9C,$9B,$99,$98,$96,$95,$94,$92,$91,$90,$8E,$8D,$8C
-  .byte $8B,$8A,$89,$87,$86,$85,$84,$83
-; colours of the two bands for every line, 4 landscapes x 120 lines
+  .byte $BF,$BC,$BA,$B8,$B6,$B4,$B2,$B0
+; colours of the two bands for every line, 4 landscapes x 88 lines
 GCA:
-  .byte $66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66
-  .byte $66,$66,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA
+  .byte $66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$AA,$AA,$AA
   .byte $AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA
-  .byte $AA,$AA,$AA,$AA,$AA,$AA,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB
-  .byte $BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB
+  .byte $AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB
   .byte $BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB
   .byte $BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB
   .byte $BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC
-  .byte $CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC,$22,$22,$22,$22,$22,$22
+  .byte $CC,$CC,$CC,$CC,$CC,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22
   .byte $22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22
-  .byte $22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$33,$33
   .byte $33,$33,$33,$33,$33,$33,$33,$33,$33,$33,$33,$33,$33,$33,$33,$33
   .byte $33,$33,$33,$33,$33,$33,$33,$33,$33,$33,$33,$33,$33,$33,$33,$33
   .byte $33,$33,$33,$33,$33,$33,$33,$33,$33,$33,$33,$33,$33,$33,$33,$33
-  .byte $33,$33,$33,$33,$33,$33,$33,$33,$33,$33,$33,$33,$33,$33,$33,$33
-  .byte $44,$44,$44,$44,$44,$44,$44,$44,$44,$44,$44,$44,$44,$44,$44,$44
-  .byte $44,$44,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55
+  .byte $44,$44,$44,$44,$44,$44,$44,$44,$44,$44,$44,$44,$44,$55,$55,$55
   .byte $55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55
-  .byte $55,$55,$55,$55,$55,$55,$77,$77,$77,$77,$77,$77,$77,$77,$77,$77
-  .byte $77,$77,$77,$77,$77,$77,$77,$77,$77,$77,$77,$77,$77,$77,$77,$77
+  .byte $55,$55,$55,$55,$55,$55,$55,$55,$77,$77,$77,$77,$77,$77,$77,$77
   .byte $77,$77,$77,$77,$77,$77,$77,$77,$77,$77,$77,$77,$77,$77,$77,$77
   .byte $77,$77,$77,$77,$77,$77,$77,$77,$77,$77,$77,$77,$77,$77,$77,$77
   .byte $77,$77,$77,$77,$77,$77,$77,$77,$66,$66,$66,$66,$66,$66,$66,$66
-  .byte $66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$99,$99,$99,$99,$99,$99
+  .byte $66,$66,$66,$66,$66,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99
   .byte $99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99
-  .byte $99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$BB,$BB
-  .byte $BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB
   .byte $BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB
   .byte $BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB
   .byte $BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB,$BB
 GCB:
-  .byte $66,$66,$66,$11,$11,$11,$11,$11,$11,$11,$11,$11,$11,$11,$11,$11
-  .byte $11,$11,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66
+  .byte $66,$66,$66,$11,$11,$11,$11,$11,$11,$11,$11,$11,$11,$66,$66,$66
   .byte $66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66
-  .byte $66,$66,$66,$66,$66,$66,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA
-  .byte $AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA
+  .byte $66,$66,$66,$66,$66,$66,$66,$66,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA
   .byte $AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA
   .byte $AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA
   .byte $AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA,$CC,$CC,$CC,$11,$11,$11,$11,$11
-  .byte $11,$11,$11,$11,$11,$11,$11,$11,$11,$11,$CC,$CC,$CC,$CC,$CC,$CC
+  .byte $11,$11,$11,$11,$11,$CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC
   .byte $CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC
-  .byte $CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC,$CC,$22,$22
   .byte $22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22
   .byte $22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22
   .byte $22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22
-  .byte $22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22,$22
-  .byte $44,$44,$44,$11,$11,$11,$11,$11,$11,$11,$11,$11,$11,$11,$11,$11
-  .byte $11,$11,$44,$44,$44,$44,$44,$44,$44,$44,$44,$44,$44,$44,$44,$44
+  .byte $44,$44,$44,$11,$11,$11,$11,$11,$11,$11,$11,$11,$11,$44,$44,$44
   .byte $44,$44,$44,$44,$44,$44,$44,$44,$44,$44,$44,$44,$44,$44,$44,$44
-  .byte $44,$44,$44,$44,$44,$44,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55
-  .byte $55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55
+  .byte $44,$44,$44,$44,$44,$44,$44,$44,$55,$55,$55,$55,$55,$55,$55,$55
   .byte $55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55
   .byte $55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55,$55
   .byte $55,$55,$55,$55,$55,$55,$55,$55,$66,$66,$66,$11,$11,$11,$11,$11
-  .byte $11,$11,$11,$11,$11,$11,$11,$11,$11,$11,$66,$66,$66,$66,$66,$66
+  .byte $11,$11,$11,$11,$11,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66
   .byte $66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66
-  .byte $66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$66,$99,$99
-  .byte $99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99
   .byte $99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99
   .byte $99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99
   .byte $99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99,$99
 
-; swaying of the formations: amplitude 24, 48, 72 x 64 phases (signed)
+; the rings of the formations: radius 24, 48, 72 x 64 phases (signed)
 SINT:
   .byte $00,$02,$05,$07,$09,$0B,$0D,$0F,$11,$13,$14,$15,$16,$17,$18,$18
   .byte $18,$18,$18,$17,$16,$15,$14,$13,$11,$0F,$0D,$0B,$09,$07,$05,$02
@@ -4217,13 +4461,6 @@ SINT:
   .byte $48,$48,$47,$45,$43,$3F,$3C,$38,$33,$2E,$28,$22,$1C,$15,$0E,$07
   .byte $00,$F9,$F2,$EB,$E4,$DE,$D8,$D2,$CD,$C8,$C4,$C1,$BD,$BB,$B9,$B8
   .byte $B8,$B8,$B9,$BB,$BD,$C1,$C4,$C8,$CD,$D2,$D8,$DE,$E4,$EB,$F2,$F9
-; speed of approach by line / 8 (8.8)
-APP_L:
-  .byte $5A,$5A,$5A,$5A,$5A,$5A,$5A,$5A,$77,$94,$B1,$CF,$EC,$09,$26,$44
-  .byte $61,$7E,$9B,$B9,$D6,$F3,$10,$2E,$4B,$68,$85,$A3,$C0,$DD,$FB,$18
-APP_H:
-  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$01,$01,$01
-  .byte $01,$01,$01,$01,$01,$01,$02,$02,$02,$02,$02,$02,$02,$02,$02,$03
 
 ; one-shot tone effects: period and volume for every frame
 WH_TL:
