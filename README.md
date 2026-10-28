@@ -32,6 +32,7 @@ A collection of arcade games written in **65C02 assembly** for the **Boogs77-min
 | `bubbles.asm` | **Bubbles** | 1–2 | Williams 1982: a soap bubble cleans a kitchen sink, sliding with inertia and growing as it eats crumbs, ants and grease (double near the drain). With eyes and a mouth it bounces sponges and brushes away, even down the drain; razor blades always pop it. Take the broom from the cleaning lady's bristles to swat the roaches that crawl out of the red-flashing drain, then slip into the green drain for a bonus of 1000 times your size before the last dirt is gone and the faucet runs. 99 levels, players take turns. |
 | `times_tables.asm` | **Times Tables** | 1–2 | An original educational game (screen texts in Italian, *TABELLINE*): the times tables from 1 to 10, one question and four answers in a cross, chosen with one push of the joystick. Practice with help, a challenge with a red two-digit countdown like a basketball scoreboard, and a duel against a friend or the computer. Wrong answers show the repeated sum and come back more often; a colour table shows what has been learnt, and every table has a monster to catch and evolve. |
 | `robert.asm` | **Robert** | 1–2 | An original isometric cube-hopping game: Robert, a little robot on a pogo stick, hops diagonally across boards of cubes floating in the void and paints every top in the goal colour, without hopping off the edge. Four boards (diamond, hourglass, ring, twin towers) and four colour rules (one hop, two hops, every hop switches, a third hop undoes). Blot the ink drop chases him, Roller wipes the paint, Spark runs round the edge and Ghost Robert repeats his hops three seconds later. Gold cubes throw him far away, the bucket paints around, the star squashes the Blot; one long jump per round. Players take turns. |
+| `cloud_raider.asm` | **Cloud Raider** | 1–2 | An original isometric shooter: a ship flies over fortresses built on islands floating among the clouds, while the world scrolls diagonally and the floor glides by. Change altitude with the joystick (the shadow and the gauge tell how high you are) to slip through the gaps of high walls, hop over low walls and dive under energy fences; fire at mines and fighters at their own altitude, drop bombs on towers, radars and fuel depots to keep the energy up. At the end of every fortress the Guardian waits: a core behind four turning shields. Four fortresses, then again faster. Players take turns. |
 
 Each source file starts with a header describing controls, rules and technical notes.
 
@@ -223,6 +224,12 @@ Captured with the miniVIC emulator in [`tools`](tools): title screen and gamepla
 <p align="center">
   <img src="screenshots/robert_title.png" width="45%" />
   <img src="screenshots/robert_game.png" width="45%" />
+</p>
+
+### Cloud Raider
+<p align="center">
+  <img src="screenshots/cloud_raider_title.png" width="45%" />
+  <img src="screenshots/cloud_raider_game.png" width="45%" />
 </p>
 
 ---
