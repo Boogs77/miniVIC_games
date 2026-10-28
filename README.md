@@ -31,6 +31,7 @@ A collection of arcade games written in **65C02 assembly** for the **Boogs77-min
 | `exerion.asm` | **Exerion** | 1–2 | Jaleco 1983: a fighter with inertia, free to fly over the whole screen: black sky above, below the ground rushes towards you in pseudo-3D bands, with the hills on the horizon moving in parallax. Formations of crosses, egg-throwing birds, jets and UFOs come from the horizon, growing as they approach, then close in a ring around the fighter, turn round it and dive at it. Unlimited dual shot, rapid single shot that uses charges (won back by hitting with the dual shot), formation bonus doubling up to 10000 and a challenging stage after every stage. Players take turns. |
 | `bubbles.asm` | **Bubbles** | 1–2 | Williams 1982: a soap bubble cleans a kitchen sink, sliding with inertia and growing as it eats crumbs, ants and grease (double near the drain). With eyes and a mouth it bounces sponges and brushes away, even down the drain; razor blades always pop it. Take the broom from the cleaning lady's bristles to swat the roaches that crawl out of the red-flashing drain, then slip into the green drain for a bonus of 1000 times your size before the last dirt is gone and the faucet runs. 99 levels, players take turns. |
 | `times_tables.asm` | **Times Tables** | 1–2 | An original educational game (screen texts in Italian, *TABELLINE*): the times tables from 1 to 10, one question and four answers in a cross, chosen with one push of the joystick. Practice with help, a challenge with a red two-digit countdown like a basketball scoreboard, and a duel against a friend or the computer. Wrong answers show the repeated sum and come back more often; a colour table shows what has been learnt, and every table has a monster to catch and evolve. |
+| `robert.asm` | **Robert** | 1–2 | An original isometric cube-hopping game: Robert, a little robot on a pogo stick, hops diagonally across boards of cubes floating in the void and paints every top in the goal colour, without hopping off the edge. Four boards (diamond, hourglass, ring, twin towers) and four colour rules (one hop, two hops, every hop switches, a third hop undoes). Blot the ink drop chases him, Roller wipes the paint, Spark runs round the edge and Ghost Robert repeats his hops three seconds later. Gold cubes throw him far away, the bucket paints around, the star squashes the Blot; one long jump per round. Players take turns. |
 
 Each source file starts with a header describing controls, rules and technical notes.
 
@@ -216,6 +217,12 @@ Captured with the miniVIC emulator in [`tools`](tools): title screen and gamepla
 <p align="center">
   <img src="screenshots/times_tables_title.png" width="45%" />
   <img src="screenshots/times_tables_game.png" width="45%" />
+</p>
+
+### Robert
+<p align="center">
+  <img src="screenshots/robert_title.png" width="45%" />
+  <img src="screenshots/robert_game.png" width="45%" />
 </p>
 
 ---

@@ -16,5 +16,6 @@
   "joust":           [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 430], ["press", "p1", "fire", 2], ["wait", 6], ["press", "p1", "fire", 2], ["wait", 6], ["press", "p1", "left+fire", 2], ["press", "p1", "left", 6], ["press", "p1", "left+fire", 2], ["press", "p1", "left", 6], ["press", "p1", "fire", 2], ["wait", 4], ["shot", "game"]],
   "bubbles":         [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 420], ["press", "p1", "up+left", 45], ["press", "p1", "left", 30], ["press", "p1", "up", 40], ["press", "p1", "right", 70], ["press", "p1", "down+right", 40], ["press", "p1", "down", 30], ["wait", 20], ["shot", "game"]],
   "exerion":         [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 360], ["press", "p1", "fire", 2], ["wait", 8], ["shot", "game"]],
-  "times_tables":    [["wait", 60], ["press", "p1", "down", 2], ["wait", 30], ["shot", "title"], ["press", "p1", "fire", 2], ["wait", 300], ["shot", "game"]]
+  "times_tables":    [["wait", 60], ["press", "p1", "down", 2], ["wait", 30], ["shot", "title"], ["press", "p1", "fire", 2], ["wait", 300], ["shot", "game"]],
+  "robert":          [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 520], ["press", "p1", "right", 2], ["wait", 20], ["press", "p1", "down", 2], ["wait", 20], ["press", "p1", "right", 2], ["wait", 20], ["press", "p1", "right", 2], ["wait", 10], ["shot", "game"]]
 }
