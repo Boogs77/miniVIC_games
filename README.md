@@ -34,6 +34,7 @@ A collection of arcade games written in **65C02 assembly** for the **Boogs77-min
 | `robert.asm` | **Robert** | 1–2 | An original isometric cube-hopping game: Robert, a little robot on a pogo stick, hops diagonally across boards of cubes floating in the void and paints every top in the goal colour, without hopping off the edge. Four boards (diamond, hourglass, ring, twin towers) and four colour rules (one hop, two hops, every hop switches, a third hop undoes). Blot the ink drop chases him, Roller wipes the paint, Spark runs round the edge and Ghost Robert repeats his hops three seconds later. Gold cubes throw him far away, the bucket paints around, the star squashes the Blot; one long jump per round. Players take turns. |
 | `cloud_raider.asm` | **Cloud Raider** | 1–2 | An original isometric shooter: a ship flies over fortresses built on islands floating among the clouds, while the world scrolls diagonally and the floor glides by. Change altitude with the joystick (the shadow and the gauge tell how high you are) to slip through the gaps of high walls, hop over low walls and dive under energy fences; fire at mines and fighters at their own altitude, drop bombs on towers, radars and fuel depots to keep the energy up. At the end of every fortress the Guardian waits: a core behind four turning shields. Four fortresses, then again faster. Players take turns. |
 
+| `crystal_gardens.asm` | **Crystal Gardens** | 1–2 | An original isometric maze game: a hedgehog walks freely over the terraces of gardens floating in the night sky, climbing ramps and jumping up and down steps, and picks up every crystal seed. Magpies swoop down to steal the seeds (touch them to scare them away), a mole leaves its hole to chase you, pine cones roll down the ramps (jump over them) and when the time bar runs out the owl comes. The golden acorn rolls the hedgehog into a spiky ball that beats moles and pine cones. Sixteen gardens in four worlds, each with its own tune: the orchard, the dunes, the slippery ice house and the night garden with its portals; then again faster. Players take turns. |
 Each source file starts with a header describing controls, rules and technical notes.
 
 > ℹ️ These games are non-commercial fan-made tributes to the original arcade games: see the **Disclaimer** at the end of this page.
@@ -230,6 +231,12 @@ Captured with the miniVIC emulator in [`tools`](tools): title screen and gamepla
 <p align="center">
   <img src="screenshots/cloud_raider_title.png" width="45%" />
   <img src="screenshots/cloud_raider_game.png" width="45%" />
+</p>
+
+### Crystal Gardens
+<p align="center">
+  <img src="screenshots/crystal_gardens_title.png" width="45%" />
+  <img src="screenshots/crystal_gardens_game.png" width="45%" />
 </p>
 
 ---
