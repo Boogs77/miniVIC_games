@@ -14,9 +14,10 @@
 # and to GitHub together with the .bin files.
 # After the push, if ..\bo6502-SDbuilder and ..\bo6502-emulator exist,
 # both SD images are rebuilt from the published games (update_sd.py:
-# sd.img with the games, sd_full.img also with the applications), the
-# games are synced into the emulator, checked and pushed: the online
-# emulator (GitHub Pages) gets the new SD in about a minute.
+# sd.img with the games, sd_full.img also with the applications),
+# sd_full.img becomes the emulator's default SD, the games are synced
+# into the emulator, checked and pushed: the online emulator (GitHub
+# Pages) gets the new SD in about a minute.
 
 param([switch]$NoPublish, [switch]$NoSd, [Parameter(ValueFromRemainingArguments = $true)][string[]]$Files)
 
@@ -110,6 +111,9 @@ if ($LASTEXITCODE -ne 0) { Write-Host "update_sd.py failed" -ForegroundColor Red
 # the full SD (games, applications, documents) is kept ready to burn too
 python "$sdb\update_sd.py" --mode full --minivic "$src\bin"
 if ($LASTEXITCODE -ne 0) { Write-Host "update_sd.py --mode full failed" -ForegroundColor Red; exit 1 }
+# the full SD is the emulator's default SD (public/sd_full.img.gz)
+node "$emu\scripts\pack-sd-full.mjs" --source "$sdb\sd_full.img"
+if ($LASTEXITCODE -ne 0) { Write-Host "Full SD packing failed" -ForegroundColor Red; exit 1 }
 node "$emu\scripts\sync-games.mjs" --source $src
 if ($LASTEXITCODE -ne 0) { Write-Host "Games sync failed" -ForegroundColor Red; exit 1 }
 
@@ -130,7 +134,7 @@ if ($LASTEXITCODE -ne 0) {
   Write-Host "Emulator checks failed: nothing pushed, see ..\bo6502-emulator\tests\out" -ForegroundColor Red
   exit 1
 }
-$paths = "public/games", "src/machines/games.ts", "public/sd.img", "public/songs"
+$paths = "public/games", "src/machines/games.ts", "public/sd.img", "public/sd_full.img.gz", "public/songs"
 git add -- $paths
 git diff --cached --quiet -- $paths
 if ($LASTEXITCODE -eq 0) {
