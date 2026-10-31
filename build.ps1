@@ -13,7 +13,8 @@
 # (tools\screenshots.js) and the screenshots go to screenshots\
 # and to GitHub together with the .bin files.
 # After the push, if ..\bo6502-SDbuilder and ..\bo6502-emulator exist,
-# the SD image is rebuilt from the published games (update_sd.py), the
+# both SD images are rebuilt from the published games (update_sd.py:
+# sd.img with the games, sd_full.img also with the applications), the
 # games are synced into the emulator, checked and pushed: the online
 # emulator (GitHub Pages) gets the new SD in about a minute.
 
@@ -106,6 +107,9 @@ if ($LASTEXITCODE -ne 0) { Write-Host "Emulator pull failed: SD not updated" -Fo
 
 python "$sdb\update_sd.py" --minivic "$src\bin" --emulator $emu
 if ($LASTEXITCODE -ne 0) { Write-Host "update_sd.py failed" -ForegroundColor Red; exit 1 }
+# the full SD (games, applications, documents) is kept ready to burn too
+python "$sdb\update_sd.py" --mode full --minivic "$src\bin"
+if ($LASTEXITCODE -ne 0) { Write-Host "update_sd.py --mode full failed" -ForegroundColor Red; exit 1 }
 node "$emu\scripts\sync-games.mjs" --source $src
 if ($LASTEXITCODE -ne 0) { Write-Host "Games sync failed" -ForegroundColor Red; exit 1 }
 
