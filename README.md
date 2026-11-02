@@ -36,6 +36,7 @@ A collection of arcade games written in **65C02 assembly** for the **Boogs77-min
 
 | `crystal_gardens.asm` | **Crystal Gardens** | 1–2 | An original isometric maze game: a hedgehog walks freely over the terraces of gardens floating in the night sky, climbing ramps and jumping up and down steps, and picks up every crystal seed. Magpies swoop down to steal the seeds (touch them to scare them away), a mole leaves its hole to chase you, pine cones roll down the ramps (jump over them) and when the time bar runs out the owl comes. The golden acorn rolls the hedgehog into a spiky ball that beats moles and pine cones. Sixteen gardens in four worlds, each with its own tune: the orchard, the dunes, the slippery ice house and the night garden with its portals; then again faster. Players take turns. |
 | `special_forces.asm` | **Special Forces** | 1–2 | An original side-scrolling action game: a commando crosses an enemy camp from left to right, running on the ground and on two floors of steel walkways joined by ladders. Knife the sentries, kneel under the riflemen's bullets, jump over barbed wire and mines, and take a machine gun, a mortar or a timed charge from the couriers. Sappers jump from floor to floor, shield men can only be beaten from above or from behind, machine-gun nests take three hits. Four sectors (perimeter, barracks, fuel depot and command bunker, from day to night): at the end of each one plant the charges on the targets and get the objective blown up. Two gates per sector, players take turns. |
+| `core_runner.asm` | **Core Runner** | 1–2 | An original space run and platform game in two parts. First the approach: fly the shuttle over a star field, shoot rocks, fighters, gunships and mines, then slip into the docking bay of the station as it slides up and down the hull. Then the station: three rooms of floors, ladders, conveyors, lifts, electric arcs, presses and crumbling floors, guarded by drones, jumpers, sparks, turrets and spiders. Reach the energy core, overload it and run back to the shuttle before the countdown ends, while the oxygen keeps going down. The stunner stops a drone for a few seconds. Eight stations, players take turns. |
 Each source file starts with a header describing controls, rules and technical notes.
 
 > ℹ️ These games are non-commercial fan-made tributes to the original arcade games: see the **Disclaimer** at the end of this page.
@@ -244,6 +245,12 @@ Captured with the miniVIC emulator in [`tools`](tools): title screen and gamepla
 <p align="center">
   <img src="screenshots/special_forces_title.png" width="45%" />
   <img src="screenshots/special_forces_game.png" width="45%" />
+</p>
+
+### Core Runner
+<p align="center">
+  <img src="screenshots/core_runner_title.png" width="45%" />
+  <img src="screenshots/core_runner_game.png" width="45%" />
 </p>
 
 ---

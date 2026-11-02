@@ -20,5 +20,6 @@
   "robert":          [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 520], ["press", "p1", "right", 2], ["wait", 20], ["press", "p1", "down", 2], ["wait", 20], ["press", "p1", "right", 2], ["wait", 20], ["press", "p1", "right", 2], ["wait", 10], ["shot", "game"]],
   "cloud_raider":    [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 440], ["press", "p1", "fire", 2], ["wait", 6], ["press", "p1", "up+fire", 2], ["wait", 6], ["press", "p1", "fire", 2], ["wait", 4], ["shot", "game"]],
   "crystal_gardens": [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 300], ["press", "p1", "right", 24], ["press", "p1", "up", 20], ["wait", 10], ["shot", "game"]],
-  "special_forces":  [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 420], ["press", "p1", "right", 110], ["press", "p1", "fire", 2], ["wait", 4], ["shot", "game"]]
+  "special_forces":  [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 420], ["press", "p1", "right", 110], ["press", "p1", "fire", 2], ["wait", 4], ["shot", "game"]],
+  "core_runner":     [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 470], ["press", "p1", "up+fire", 12], ["press", "p1", "fire", 8], ["shot", "game"]]
 }
