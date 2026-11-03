@@ -38,6 +38,7 @@ A collection of arcade games written in **65C02 assembly** for the **Boogs77-min
 | `special_forces.asm` | **Special Forces** | 1–2 | An original side-scrolling action game: a commando crosses an enemy camp from left to right, running on the ground and on two floors of steel walkways joined by ladders. Knife the sentries, kneel under the riflemen's bullets, jump over barbed wire and mines, and take a machine gun, a mortar or a timed charge from the couriers. Sappers jump from floor to floor, shield men can only be beaten from above or from behind, machine-gun nests take three hits. Four sectors (perimeter, barracks, fuel depot and command bunker, from day to night): at the end of each one plant the charges on the targets and get the objective blown up. Two gates per sector, players take turns. |
 | `core_runner.asm` | **Core Runner** | 1–2 | An original space run and platform game in two parts. First the approach: fly the shuttle over a star field, shoot rocks, fighters, gunships and mines, then slip into the docking bay of the station as it slides up and down the hull. Then the station: three rooms of floors, ladders, conveyors, lifts, electric arcs, presses and crumbling floors, guarded by drones, jumpers, sparks, turrets and spiders. Reach the energy core, overload it and run back to the shuttle before the countdown ends, while the oxygen keeps going down. The stunner stops a drone for a few seconds. Eight stations, players take turns. |
 | `deep_space_miner.asm` | **Deep Space Miner** | 1–2 | An original space mining shooter in a sector of 8 × 8 screens that wraps round, with a radar at the top. Fly the drill ship with inertia, shoot the rocks to break crystals out of them and pick them up: every crystal is a seismic charge. Drones steal the crystals and carry them to the Colossus, a giant mechanical spider built piece by piece; with all 20 pieces it wakes up and hunts you, while fighters keep close and shoot. Drop charges near it: they find it by themselves and knock its pieces off one by one. Players take turns. |
+| `dune_ranger.asm` | **Dune Ranger** | 1–2 | An original side-scrolling rover game on a red desert planet. Drive from outpost to outpost while the mesas, the dunes and the track scroll at different speeds: RIGHT goes faster, LEFT slower. Jump the craters, shoot the rocks ahead and the drones overhead (one button fires forward and up together), watch out for spring mines, sand worms rising out of the track and sandstorms chasing you from behind. Eight legs by day with a time bonus at every outpost, then the night run. Players take turns. |
 Each source file starts with a header describing controls, rules and technical notes.
 
 > ℹ️ These games are non-commercial fan-made tributes to the original arcade games: see the **Disclaimer** at the end of this page.
@@ -258,6 +259,12 @@ Captured with the miniVIC emulator in [`tools`](tools): title screen and gamepla
 <p align="center">
   <img src="screenshots/deep_space_miner_title.png" width="45%" />
   <img src="screenshots/deep_space_miner_game.png" width="45%" />
+</p>
+
+### Dune Ranger
+<p align="center">
+  <img src="screenshots/dune_ranger_title.png" width="45%" />
+  <img src="screenshots/dune_ranger_game.png" width="45%" />
 </p>
 
 ---
