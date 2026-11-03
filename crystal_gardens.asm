@@ -3891,6 +3891,7 @@ TXT_TOP:
   .byte 0,26,"2UP",0
   .byte $FF
 TXT_TITLE:
+  .byte 8,3,"DEVELOPED BY BOOGS & CCAI",0
   .byte 9,3,"PICK UP EVERY CRYSTAL SEED",0
   .byte 11,6,"HEDGEHOG  B1 = JUMP",0
   .byte 13,6,"MAGPIE    STEALS SEEDS",0

@@ -4933,6 +4933,7 @@ TXT_HUD:
   .byte $FF
 TXT_TITLE:
   .byte 4,8,"S T A R G A T E",0
+  .byte 5,3,"DEVELOPED BY BOOGS & CCAI",0
   .byte 14,1,"B1 FIRE B2 BOMB  HOLD B2 INVISO",0
   .byte 15,1,"B1+B2 HYPER   B1=1 PL  B2=2 PL",0
   .byte $FF

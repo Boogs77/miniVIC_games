@@ -4133,7 +4133,8 @@ TXT_TITLE:
   .byte 17,7,"SHIELD MAN     500",0
   .byte 19,7,"COURIER   B2 = WEAPON",0
   .byte 21,3,"B1 ON A TARGET = CHARGE",0
-  .byte 23,1,"B1 = 1 PLAYER   B2 = 2 PLAYERS",0
+  .byte 22,1,"B1 = 1 PLAYER   B2 = 2 PLAYERS",0
+  .byte 23,3,"DEVELOPED BY BOOGS & CCAI",0
   .byte $FF
 TXT_PLAYER:
   .byte 7,12,"PLAYER ",0

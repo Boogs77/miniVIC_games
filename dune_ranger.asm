@@ -4293,8 +4293,9 @@ TXT_TITLE:
   .byte 15,8,"SAND WORM          500",0
   .byte 17,8,"DRONE              300",0
   .byte 19,3,"REACH THE OUTPOSTS IN TIME",0
-  .byte 21,1,"RIGHT = FASTER  LEFT = SLOWER",0
-  .byte 23,1,"B1 = 1 PLAYER   B2 = 2 PLAYERS",0
+  .byte 20,1,"RIGHT = FASTER  LEFT = SLOWER",0
+  .byte 21,1,"B1 = 1 PLAYER   B2 = 2 PLAYERS",0
+  .byte 23,3,"DEVELOPED BY BOOGS & CCAI",0
   .byte $FF
 TXT_PLAYER:
   .byte 7,12,"PLAYER ",0

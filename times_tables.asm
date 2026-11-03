@@ -3938,6 +3938,7 @@ AI_RIGHT:   .byte 160,200,235                  ; right answer: probability out o
 ; ---------------------------------------------------------------
 TXT_TITLE:
   .byte 5,11,"PER MATTIA",0
+  .byte 6,3,"DEVELOPED BY BOOGS & CCAI",0
   .byte 8,3,"ALLENAMENTO",0
   .byte 10,3,"SFIDA",0
   .byte 12,3,"DUELLO 1 GIOCATORE CONTRO CPU",0

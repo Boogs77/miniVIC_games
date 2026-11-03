@@ -5444,7 +5444,8 @@ TXT_TITLE:
   .byte 17,8,"ROCK              50",0
   .byte 19,8,"CHARGE   B2 = DROP",0
   .byte 21,2,"BLOW UP THE COLOSSUS  15000",0
-  .byte 23,1,"B1 = 1 PLAYER   B2 = 2 PLAYERS",0
+  .byte 22,1,"B1 = 1 PLAYER   B2 = 2 PLAYERS",0
+  .byte 23,3,"DEVELOPED BY BOOGS & CCAI",0
   .byte $FF
 TXT_PLAYER:
   .byte 7,12,"PLAYER ",0

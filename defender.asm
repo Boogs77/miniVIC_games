@@ -3810,6 +3810,7 @@ TXT_HUD:
   .byte $FF
 TXT_TITLE:
   .byte 4,8,"D E F E N D E R",0
+  .byte 5,3,"DEVELOPED BY BOOGS & CCAI",0
   .byte 6,11,"LANDER     150",0
   .byte 7,11,"MUTANT     150",0
   .byte 8,11,"BOMBER     250",0

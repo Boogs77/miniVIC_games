@@ -3964,6 +3964,7 @@ TXT_TITLE:
   .byte 17,11,"ROACH        1000",0
   .byte 19,3,"FACE + GREEN DRAIN = BONUS",0
   .byte 21,1,"B1 = 1 PLAYER   B2 = 2 PLAYERS",0
+  .byte 23,3,"DEVELOPED BY BOOGS & CCAI",0
   .byte $FF
 TXT_BOT:
   .byte 23,1,"LEVEL",0

@@ -3667,6 +3667,7 @@ TXT_TITLE:
   .byte 13,10,"UFO         300",0
   .byte 15,2,"FORMATION BONUS UP TO 10000",0
   .byte 16,1,"B1 = 1 PLAYER   B2 = 2 PLAYERS",0
+  .byte 23,3,"DEVELOPED BY BOOGS & CCAI",0
   .byte $FF
 TXT_BOT:
   .byte 23,0,"CHARGE",0

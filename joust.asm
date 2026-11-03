@@ -4731,6 +4731,7 @@ TXT_TITLE:
   .byte 17,10,"EGG  250 TO 1000",0
   .byte 18,10,"IN THE AIR  +500",0
   .byte 20,1,"B1 = 1 PLAYER   B2 = 2 PLAYERS",0
+  .byte 21,3,"DEVELOPED BY BOOGS & CCAI",0
   .byte $FF
 BAN_LO:     .byte <TXT_B0,<TXT_B1,<TXT_B2,<TXT_B3,<TXT_B4,<TXT_B5
 BAN_HI:     .byte >TXT_B0,>TXT_B1,>TXT_B2,>TXT_B3,>TXT_B4,>TXT_B5

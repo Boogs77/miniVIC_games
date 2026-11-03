@@ -2819,6 +2819,7 @@ TXT_TITLE:
   .byte 13,13,15,"=30 POINTS",0
   .byte 15,13,15,"=20 POINTS",0
   .byte 17,13,15,"=10 POINTS",0
+  .byte 18,3,14,"DEVELOPED BY BOOGS & CCAI",0
   .byte 20,6,2,"BUTTON 1 = 1 PLAYER",0
   .byte 21,6,2,"BUTTON 2 = 2 PLAYERS",0
   .byte $FF

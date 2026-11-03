@@ -4042,7 +4042,8 @@ TXT_TITLE:
   .byte 16,7,"FIGHTER        150",0
   .byte 18,7,"GUARDIAN      2000",0
   .byte 20,2,"STICK=MOVE  B1=FIRE  B2=BOMB",0
-  .byte 22,1,"B1 = 1 PLAYER   B2 = 2 PLAYERS",0
+  .byte 21,1,"B1 = 1 PLAYER   B2 = 2 PLAYERS",0
+  .byte 23,3,"DEVELOPED BY BOOGS & CCAI",0
   .byte $FF
 TXT_BOT:
   .byte 23,0,"E",0

@@ -2507,6 +2507,8 @@ TXT_TITLE:
   .byte 14,6,14,"HOLD THE BUTTON TO CATCH",0
   .byte 15,10,14,"THE FIREBALL",0
   .byte 17,9,11,"FIRST TO 3 WINS",0
+  .byte 20,10,14,"DEVELOPED BY",0
+  .byte 21,10,14,"BOOGS & CCAI",0
   .byte $FF
 TXT_WIN0:   .byte 11,12,8,"RED WINS",0,$FF
 TXT_WIN1:   .byte 11,12,5,"BLUE WINS",0,$FF

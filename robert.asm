@@ -3780,6 +3780,7 @@ TXT_TITLE:
   .byte 19,6,"STAR   SQUASHES BLOT  300",0
   .byte 21,5,"B1 + STICK = LONG JUMP",0
   .byte 22,1,"B1 = 1 PLAYER   B2 = 2 PLAYERS",0
+  .byte 23,3,"DEVELOPED BY BOOGS & CCAI",0
   .byte $FF
 TXT_BOT:
   .byte 23,1,"LEVEL",0

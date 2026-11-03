@@ -5118,7 +5118,8 @@ TXT_TITLE:
   .byte 17,7,"MINE            150",0
   .byte 19,8,"THEY GUARD THE CORE",0
   .byte 21,2,"TOUCH THE CORE AND RUN BACK",0
-  .byte 23,1,"B1 = 1 PLAYER   B2 = 2 PLAYERS",0
+  .byte 22,1,"B1 = 1 PLAYER   B2 = 2 PLAYERS",0
+  .byte 23,3,"DEVELOPED BY BOOGS & CCAI",0
   .byte $FF
 TXT_PLAYER:
   .byte 7,12,"PLAYER ",0
