@@ -245,7 +245,9 @@ FIRE_T      = 14         ; frames between shots with the button held
 REC_ZONE    = 28         ; fixed zone of the game in the save area
 REC_RAM     = $7C00      ; $2A0 bytes after the program
 REC_ROW     = 9          ; table on rows 9-17 of the title
+REC_WIPEN   = 10         ; rows 9-18 of the title give way to the table
 REC_JOY2    = $FF        ; both joysticks drive the player playing
+REC_SROW    = REC_ROW    ; table header on the sign screen
 
 PORTB_JOY = $d580        ;         |P2|P1|RG|LF|DW|UP (LSB)   joystick 2
 PORTA_JOY = $d581        ;         |P2|P1|RG|LF|DW|UP (LSB)   joystick 1
@@ -4329,8 +4331,11 @@ SFX_BOOM:                       ; A = id (S_SMALL / S_BIG), X = pan
 ;    REC_ZONE   fixed zone number of the game (1-127)
 ;    REC_RAM    $2A0 bytes of free RAM (buffer, table, variables)
 ;    REC_ROW    screen row of the table header (rows +1..+8 =
-;               the table, +9 cleared too; the sign screen also
-;               uses rows -5, -3 and +10..+12)
+;               the table; the sign screen also uses rows -4,
+;               -2 and +10..+12)
+;    REC_WIPEN  rows cleared from REC_ROW for the table (>= 9)
+;    REC_SROW   row of the table header on the sign screen (rows
+;               -4, -2 and +10..+12 too); usually REC_ROW
 ;    REC_JOY2   $FF = both joysticks sign, 0 = the player's own
 ;    REC_NAME   16 bytes: name of the game, spaces at the end
 ;    REC_HEAD   header of the table, 0 at the end
@@ -4339,7 +4344,7 @@ SFX_BOOM:                       ; A = id (S_SMALL / S_BIG), X = pan
 ;    REC_CLS    clears the screen for the sign screen
 ;    REC_SND    A = 0 letter changed, 1 initials confirmed
 ;  and has VDATA, P_JOY (2 bytes, 1 = pressed, bits UDLR B1 B2),
-;  READ_JOY, VINT, VDP_INT_OFF (waits for the next frame and
+;  READ_JOY, HIDE_SPRITES, VINT, VDP_INT_OFF (waits for the next frame and
 ;  stops the NMI) and VDP_INT_ON.
 ;
 ;  Calls:
@@ -4352,7 +4357,7 @@ SFX_BOOM:                       ; A = id (S_SMALL / S_BIG), X = pan
 ;    REC_TICK   every title frame: C = 1 when the page changes,
 ;               REC_PG = page to draw (0 game, 1 table)
 ;    REC_SHOW   draws the table (VDP interrupt off)
-;    REC_WIPE   clears rows REC_ROW..REC_ROW+9 (interrupt off)
+;    REC_WIPE   clears REC_WIPEN rows from REC_ROW (interrupt off)
 ;    REC_TAB    the table: 8 rows of 8 bytes, best first
 ;               (score 4 BCD bytes, 3 initials, extra byte)
 ; ===============================================================
@@ -4385,6 +4390,7 @@ REC_SH     = REC_RAM+$27D
 REC_PT     = REC_RAM+$27E      ; 2: frames left on this title page
 REC_PG     = REC_RAM+$280      ; title page shown (0 game, 1 table)
 REC_T      = REC_RAM+$281
+REC_R0     = REC_RAM+$282      ; row of the table header being drawn
 
 REC_AYL    = $D384             ; AY latches (left, right) and data
 REC_AYR    = $D380
@@ -4763,12 +4769,13 @@ REC_CHECK:
 ; ---------------------------------------------------------------
 REC_SIGN:
   JSR VDP_INT_OFF
+  JSR HIDE_SPRITES               ; nothing of the game over the table
   JSR REC_CLS
-  LDX #REC_ROW-5
+  LDX #REC_SROW-4
   LDY #11
   LDA #(RT_NEW-REC_TXT)
   JSR REC_PUTS
-  LDX #REC_ROW-3
+  LDX #REC_SROW-2
   LDY #12
   LDA #(RT_PLAYER-REC_TXT)
   JSR REC_PUTS
@@ -4776,16 +4783,18 @@ REC_SIGN:
   CLC
   ADC #'1'
   STA VDATA
-  JSR REC_SHOW
-  LDX #REC_ROW+10
+  LDA #REC_SROW
+  STA REC_R0
+  JSR REC_SHOW_R
+  LDX #REC_SROW+10
   LDY #7
   LDA #(RT_H1-REC_TXT)
   JSR REC_PUTS
-  LDX #REC_ROW+11
+  LDX #REC_SROW+11
   LDY #7
   LDA #(RT_H2-REC_TXT)
   JSR REC_PUTS
-  LDX #REC_ROW+12
+  LDX #REC_SROW+12
   LDY #7
   LDA #(RT_H3-REC_TXT)
   JSR REC_PUTS
@@ -4930,8 +4939,8 @@ REC_INITS:
   LSR A
   LSR A
   LSR A
-  CLC
-  ADC #REC_ROW+1
+  SEC                          ; row REC_R0 + 1 + place
+  ADC REC_R0
   TAX
   LDY #7
   JSR REC_XY
@@ -4991,9 +5000,12 @@ REC_TICK:
 ;    " 1. ABC  00123450  LEG 5"  (columns 4, 7, 12, 22)
 ; ---------------------------------------------------------------
 REC_SHOW:
+  LDA #REC_ROW
+  STA REC_R0
+REC_SHOW_R:                    ; the table with its header on row REC_R0
   LDA REC_POS                  ; kept: the row being signed
   PHA
-  JSR REC_WIPE
+  JSR REC_WIPE_R
   LDX #0                       ; header, centred
 .sh_n:
   LDA REC_HEAD,X
@@ -5007,7 +5019,7 @@ REC_SHOW:
   SBC REC_T
   LSR A
   TAY
-  LDX #REC_ROW
+  LDX REC_R0
   JSR REC_XY
   LDX #0
 .sh_h:
@@ -5036,8 +5048,8 @@ REC_LINE:
   LSR A
   LSR A
   STA REC_K
-  CLC
-  ADC #REC_ROW+1
+  SEC                          ; row REC_R0 + 1 + place
+  ADC REC_R0
   TAX
   LDY #4
   JSR REC_XY
@@ -5171,10 +5183,16 @@ REC_OUT:
   STA VDATA
   RTS
 
-; rows REC_ROW..REC_ROW+9 blank
+; REC_WIPEN rows from REC_ROW blank (REC_WIPE_R: from REC_R0)
 REC_WIPE:
   LDA #REC_ROW
+  STA REC_R0
+REC_WIPE_R:
+  LDA REC_R0
   STA REC_K
+  CLC
+  ADC #REC_WIPEN
+  STA REC_T
 .wp_r:
   LDX REC_K
   LDY #0
@@ -5188,7 +5206,7 @@ REC_WIPE:
   BNE .wp_c
   INC REC_K
   LDA REC_K
-  CMP #REC_ROW+10
+  CMP REC_T
   BNE .wp_r
   RTS
 
