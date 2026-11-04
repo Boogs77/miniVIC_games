@@ -4353,7 +4353,7 @@ SFX_BOOM:                       ; A = id (S_SMALL / S_BIG), X = pan
 ;               first), REC_EX (extra byte), REC_PL (player 0/1);
 ;               C = 1 if it entered the table (signed on the spot)
 ;    REC_SAVE   after the checks: one write, if anything changed
-;    REC_TITLE  at the title: page 0 (the game's own) for ~5 s
+;    REC_TITLE  at the title: page 0 (the game's own) for 8 s
 ;    REC_TICK   every title frame: C = 1 when the page changes,
 ;               REC_PG = page to draw (0 game, 1 table)
 ;    REC_SHOW   draws the table (VDP interrupt off)
@@ -4394,7 +4394,8 @@ REC_R0     = REC_RAM+$282      ; row of the table header being drawn
 
 REC_AYL    = $D384             ; AY latches (left, right) and data
 REC_AYR    = $D380
-REC_PAGE_T = 300               ; frames of a title page (5 s)
+REC_PAGE_T = 480               ; frames of the title page of the game (8 s)
+REC_TAB_T  = 300               ; frames of the table (5 s)
 REC_WAITT  = 1800              ; 30 s without a key: the initials are confirmed
 
 ; sector header: signature, version, zone, type 1 = records,
@@ -4968,6 +4969,7 @@ REC_INITS:
 ; ---------------------------------------------------------------
 REC_TITLE:
   STZ REC_PG
+
   LDA #<REC_PAGE_T
   STA REC_PT
   LDA #>REC_PAGE_T
@@ -4985,13 +4987,20 @@ REC_TICK:
   CLC
   RTS
 .tk_sw:
-  LDA #<REC_PAGE_T
-  STA REC_PT
-  LDA #>REC_PAGE_T
-  STA REC_PT+1
-  LDA REC_PG
+  LDA REC_PG                   ; the other page: the table for 5 s, the game's for 8 s
   EOR #1
   STA REC_PG
+  BEQ .tk_g
+  LDA #<REC_TAB_T
+  STA REC_PT
+  LDA #>REC_TAB_T
+  STA REC_PT+1
+  SEC
+  RTS
+.tk_g:
+  JSR REC_TITLE
+  LDA #0
+  STA REC_PG                   ; (REC_TITLE keeps page 0)
   SEC
   RTS
 
