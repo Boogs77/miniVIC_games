@@ -43,6 +43,15 @@ Each source file starts with a header describing controls, rules and technical n
 
 > ℹ️ These games are non-commercial fan-made tributes to the original arcade games: see the **Disclaimer** at the end of this page.
 
+### 🏆 Records on the SD card
+
+Bubbles, Cloud Raider, Core Runner, Crystal Gardens, Deep Space Miner, Defender, Dune Ranger, Exerion, Joust, Moon Cresta, Radar Scope, Robert, Space Firebird, Special Forces and Stargate keep their **8 best scores**, each signed with **3 initials**, on the SD card:
+
+* after the game over, a player whose score enters the table signs it: UP / DOWN change the letter, LEFT / RIGHT move, a button goes on (after 30 seconds the initials are confirmed by themselves);
+* the title screen shows the table every few seconds, and the best score is the HI of the game;
+* the records are written with the **BIOS KEYB/SD** in a save area after the first 16 MB of the card, which the SD tools never overwrite; with the older BIOS the table stays in RAM until the power goes off;
+* the web emulator keeps the save area in the browser and can export or import it as a `.json` file; `saves.py` of [bo6502-SDbuilder](https://github.com/Boogs77/bo6502-SDbuilder) reads and writes the same area on a real card.
+
 ---
 
 ## 🧠 Hardware Requirements
