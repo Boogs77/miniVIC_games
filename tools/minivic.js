@@ -8,10 +8,22 @@
 //
 // The NMI handler of the BIOS is replaced by a stub at $FF00:
 //   PHA PHX PHY / JSR $0FD0 / LDA $B001 / PLY PLX PLA / RTI
+//
+// SD sector routines of the BIOS KEYB/SD (option bios: 'keybsd', the default):
+//   $FD18 read sector, $FD1B write sector, $FD1E SD init (JMPs in ROM, so a game finds $4C there).
+//   They work on the save area of the SD (sectors 32768-36863, see SD_SALVATAGGI.md), kept in
+//   this.saves (Map sector -> 512 bytes; loadSaves / saveSaves read and write the .json export of the
+//   web emulator). Like the real BIOS they clobber zero page $44-$4E and RAM $0306-$0315, keep A/X/Y
+//   and return C=0 ok / C=1 error; with sd_type ($030A) = 3 the real BIOS sends a sector number to a
+//   byte-addressed card, so the access lands elsewhere: here it does too (the game must call SD init first).
+//   this.sdStats counts calls, errors, writes outside the save area and calls with the VDP interrupt on.
+// Option bios: 'old' leaves $FD18-$FD20 at $00, like the BIOS 24.10.26 (no sector routines).
 
 const zlib = require('zlib');
 
 const CYCLES_PER_FRAME = 16667;           // 1 MHz / 60 Hz
+const SAVE_FIRST = 32768, SAVE_SECTORS = 4096;   // SD save area: sectors from 16 MB
+const SD_CYCLES = { 0xFD18: 60000, 0xFD1B: 80000, 0xFD1E: 40000 };   // about the bit-banged SPI time
 
 // ---------------- CPU ----------------
 const C = 0x01, Z = 0x02, I = 0x04, D = 0x08, B = 0x10, U = 0x20, V = 0x40, N = 0x80;
@@ -343,7 +355,7 @@ class VDP {
 
 // ---------------- whole machine ----------------
 class MiniVIC {
-  constructor(bin, loadAddr = 0x0FD0, start = 0x1000) {
+  constructor(bin, loadAddr = 0x0FD0, start = 0x1000, opts = {}) {
     this.mem = new Uint8Array(0x10000);
     this.mem.set(bin, loadAddr);
     // stub of the NMI handler of the BIOS
@@ -352,6 +364,12 @@ class MiniVIC {
     this.mem[0xFF20] = 0x40;                                   // RTI for IRQ/BRK
     this.mem[0xFFFA] = 0x00; this.mem[0xFFFB] = 0xFF;
     this.mem[0xFFFE] = 0x20; this.mem[0xFFFF] = 0xFF;
+    this.bios = opts.bios || 'keybsd';
+    if (this.bios === 'keybsd') {
+      for (const a of [0xFD18, 0xFD1B, 0xFD1E]) this.mem.set([0x4C, a & 0xFF, a >> 8], a);
+    }
+    this.saves = opts.saves || new Map();
+    this.sdStats = { calls: 0, errors: 0, badWrites: 0, nmiOn: 0 };
     this.vdp = new VDP();
     this.joy = [0, 0];                                         // bit set = pressed (P1, P2)
     this.cpu = new CPU(this);
@@ -382,6 +400,7 @@ class MiniVIC {
     const cpu = this.cpu;
     const end = cpu.cycles + CYCLES_PER_FRAME;
     while (cpu.cycles < end) {
+      if (this.trySd()) continue;
       cpu.step();
       this.checkNmi();
       if (cpu.bad) throw new Error(`unknown opcode $${cpu.bad.opc.toString(16)} at $${cpu.bad.pc.toString(16)}`);
@@ -390,6 +409,66 @@ class MiniVIC {
     this.vdp.status |= 0x80;
     this.checkNmi();
     this.frame++;
+  }
+
+  // ---------------- SD routines of the BIOS KEYB/SD ----------------
+  /** call before every cpu.step() in a test's own frame loop: runs the SD routine the PC is at, if any */
+  trySd() {
+    if (this.bios !== 'keybsd' || !SD_CYCLES[this.cpu.pc]) return false;
+    this.sdCall(this.cpu.pc);
+    return true;
+  }
+  sdCall(pc) {
+    const cpu = this.cpu, m = this.mem;
+    this.sdStats.calls++;
+    if (this.vdp.reg[1] & 0x20) this.sdStats.nmiOn++;          // the game's NMI could run in the middle
+    let ok = true;
+    if (pc === 0xFD1E) {
+      m[0x030A] = 1;                                           // sd_type: SDSC v1
+      cpu.a = 1;
+    } else {
+      if (!m[0x030A]) m[0x030A] = 1;                           // not initialised yet: init first
+      const lba = (m[0x0316] | (m[0x0317] << 8) | (m[0x0318] << 16) | (m[0x0319] << 24)) >>> 0;
+      // sd_type 3 (SDHC) on this byte-addressed card: the sector number arrives as a byte address
+      const sector = m[0x030A] === 3 ? (lba % 512 ? -1 : lba / 512) : lba;
+      const buf = cpu.x | (cpu.y << 8);
+      const inArea = sector >= SAVE_FIRST && sector < SAVE_FIRST + SAVE_SECTORS;
+      if (sector < 0 || sector >= SAVE_FIRST + SAVE_SECTORS) ok = false;
+      else if (pc === 0xFD18) {
+        const d = (inArea && this.saves.get(sector)) || new Uint8Array(512);
+        for (let i = 0; i < 512; i++) if (buf + i < 0x8000) m[buf + i] = d[i];
+      } else if (inArea) {
+        this.saves.set(sector, Uint8Array.from(m.subarray(buf, buf + 512)));
+      } else {
+        this.sdStats.badWrites++;                              // would overwrite programs or documents
+      }
+    }
+    for (let a = 0x44; a <= 0x4E; a++) m[a] = (a * 37 + this.sdStats.calls) & 0xFF;   // driver variables
+    for (let a = 0x0306; a <= 0x0315; a++) if (a !== 0x030A) m[a] = (a * 11) & 0xFF;
+    m[0x0308] = 0;                                             // kb_flags: Caps only
+    if (!ok) this.sdStats.errors++;
+    cpu.flag(C, !ok);
+    cpu.pc = ((cpu.pull() | (cpu.pull() << 8)) + 1) & 0xFFFF;  // RTS
+    cpu.cycles += SD_CYCLES[pc];
+  }
+
+  /** reads the save area from a .json export (format minivic-saves); a missing file = empty area */
+  loadSaves(file) {
+    const fs = require('fs');
+    this.saves.clear();
+    if (!fs.existsSync(file)) return 0;
+    const j = JSON.parse(fs.readFileSync(file, 'utf8'));
+    for (const [k, v] of Object.entries(j.sectors || {})) this.saves.set(Number(k), Uint8Array.from(Buffer.from(v, 'base64')));
+    return this.saves.size;
+  }
+
+  /** writes the save area as a .json export, readable by the web emulator (Import records) */
+  saveSaves(file) {
+    const sectors = {};
+    for (const [n, d] of [...this.saves].sort((a, b) => a[0] - b[0])) {
+      if (d.some(b => b)) sectors[n] = Buffer.from(d).toString('base64');
+    }
+    require('fs').writeFileSync(file, JSON.stringify({ format: 'minivic-saves', version: 1, first: SAVE_FIRST, sectors }, null, 1));
   }
 }
 
