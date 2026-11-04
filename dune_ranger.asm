@@ -5044,26 +5044,26 @@ REC_LINE:
   LDA REC_K                    ; place
   CLC
   ADC #'1'
-  STA VDATA
+  JSR REC_OUT
   LDA #'.'
-  STA VDATA
+  JSR REC_OUT
   LDA #' '
-  STA VDATA
+  JSR REC_OUT
   LDX REC_POS
   LDA REC_TAB+4,X              ; initials
-  STA VDATA
+  JSR REC_OUT
   LDA REC_TAB+5,X
-  STA VDATA
+  JSR REC_OUT
   LDA REC_TAB+6,X
-  STA VDATA
+  JSR REC_OUT
   LDA REC_TAB,X                ; an empty row: no score
   ORA REC_TAB+1,X
   ORA REC_TAB+2,X
   ORA REC_TAB+3,X
   BEQ .ln_e
   LDA #' '
-  STA VDATA
-  STA VDATA
+  JSR REC_OUT
+  JSR REC_OUT
   STZ REC_NZ                   ; score: 8 digits, no leading zeros
   TXA
   CLC
@@ -5093,13 +5093,13 @@ REC_LINE:
   LDA REC_TAB+7,X
   BEQ .ln_e
   LDA #' '
-  STA VDATA
-  STA VDATA
+  JSR REC_OUT
+  JSR REC_OUT
   LDX #0
 .ln_x:
   LDA REC_XLBL,X
   BEQ .ln_v
-  STA VDATA
+  JSR REC_OUT
   INX
   BRA .ln_x
 .ln_v:
@@ -5116,13 +5116,12 @@ REC_DIG:
   LDA REC_NZ
   BNE .dg_0
   LDA #' '
-  STA VDATA
-  RTS
+  JMP REC_OUT
 .dg_0:
   LDA #0
 .dg_p:
   ORA #'0'
-  STA VDATA
+  JSR REC_OUT
   LDA #1
   STA REC_NZ
   RTS
@@ -5139,7 +5138,10 @@ REC_DEC:
   ADC #100
   CPX #'0'
   BEQ .dc_t
-  STX VDATA
+  PHA
+  TXA
+  JSR REC_OUT
+  PLA
   INC REC_NZ
 .dc_t:
   LDX #'0'-1
@@ -5154,9 +5156,18 @@ REC_DEC:
   CPX #'0'
   BEQ .dc_u
 .dc_tp:
-  STX VDATA
+  PHA
+  TXA
+  JSR REC_OUT
+  PLA
 .dc_u:
   ORA #'0'
+  ; fall into REC_OUT
+
+; one character to the VDP. Every write of the table goes through here, so two writes
+; are at least 14 cycles apart: while it draws the screen the TMS9918A needs about 8 us
+; between two accesses, or a character is lost (the emulators do not show it)
+REC_OUT:
   STA VDATA
   RTS
 
@@ -5171,7 +5182,8 @@ REC_WIPE:
   LDX #32
   LDA #' '
 .wp_c:
-  STA VDATA
+  STA VDATA                    ; 11 cycles per write (see REC_OUT)
+  NOP
   DEX
   BNE .wp_c
   INC REC_K
