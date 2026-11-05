@@ -1091,12 +1091,18 @@ DRAW_BOTTOM:
   JSR NT_XY
   LDA #'S'
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA STATION
   CLC
   ADC #$31
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA #$20
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDX CURP                     ; spare lives (at most 4)
   LDA LIVES,X
   BEQ .db_z
@@ -1111,30 +1117,48 @@ DRAW_BOTTOM:
   LDA #T_LIFE
 .db_b:
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   INX
   CPX #4
   BNE .db_l
   LDA #$20
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA PHASE                    ; stunner and its charges (station only)
   BEQ .db_ns
   LDA #T_STUN
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA STUNC
   ORA #$30
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA #$20
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA #T_OXY2
   BRA .db_ic
 .db_ns:
   LDA #$20
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA #T_SHIPI
 .db_ic:
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA #$FF                     ; the bar is drawn by UPDATE_BAR
   STA BARV
   LDX #23
@@ -1149,6 +1173,8 @@ DRAW_BOTTOM:
   LDA TXT_CORE,Y
   BEQ .db_te
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   INY
   BRA .db_t
 .db_te:
@@ -1159,6 +1185,8 @@ DRAW_BOTTOM:
   LDA #$20
 .db_sp:
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   DEY
   BNE .db_sp
   RTS

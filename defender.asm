@@ -219,7 +219,7 @@ BTN_MASK    = %00110000
 REC_ZONE    = 11           ; fixed zone of the game in the save area
 REC_RAM     = $7C00        ; $2A0 bytes of free RAM
 REC_ROW     = 6            ; title: header on row 6, the table on rows 7-14
-REC_WIPEN   = 9            ; rows 6-14
+REC_WIPEN   = 13           ; rows 6-18 (the enemies of the title)
 REC_JOY2    = $FF          ; both joysticks sign
 REC_SROW    = 9            ; sign screen: below the scanner
 HIDE_Y      = $C0
@@ -283,6 +283,7 @@ TITLE:
   STA SND_CMD
   JSR VDP_INT_OFF
   JSR CLEAR_FIELD
+  JSR FONT_LOW                 ; the title uses the whole screen
   JSR DRAW_HUD
   JSR TITLE_PAGE
   JSR REC_TITLE
@@ -357,6 +358,9 @@ TITLE_PAGE:
 ;  NEW GAME
 ; ===============================================================
 NEW_GAME:
+  JSR VDP_INT_OFF              ; the mountains back in the third 2 (the title put the font there)
+  JSR LOAD_GFX
+  JSR VDP_INT_ON
   LDA #CMD_GAME
   STA SND_CMD
   LDA #$00
@@ -614,6 +618,9 @@ REC_XY = NT_XY
 REC_CLS:                       ; the sign screen: the field empty, the HUD on top
   JSR HIDE_SPRITES
   JSR CLEAR_FIELD
+  JSR FONT_LOW
+  JMP DRAW_HUD
+FONT_LOW:
   STZ T0                       ; the font in the third 2 too (tiles 32-95, white):
   LDA #$51                     ; there the mountains use those tiles, LOAD_GFX puts them back
   STA T1
@@ -632,8 +639,7 @@ REC_CLS:                       ; the sign screen: the field empty, the HUD on to
   LDA #2
   STA T3
   LDA #$F0
-  JSR VFILL
-  JMP DRAW_HUD
+  JMP VFILL
 REC_SND:                       ; A = 0 a letter, 1 the initials confirmed
   PHX
   LDX #2
@@ -2545,6 +2551,8 @@ CLEAR_FIELD:
   INY
 .cf_w:
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   INX
   CPX #32
   BNE .cf_r
@@ -2555,20 +2563,30 @@ CLEAR_FIELD:
   LDA #HLINE_T
 .cf_l:
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   DEX
   BNE .cf_l
   LDX #$00                     ; rows 4-23: empty (640 bytes)
   LDA #0
 .cf_e:
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   INX
   CPX #160
   BNE .cf_e
   LDX #160
 .cf_e2:
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   DEX
   BNE .cf_e2
   RTS
@@ -4811,7 +4829,7 @@ GFX_LOAD:
   .byte 2, $08,$70, <(TERR_TILES*8),>(TERR_TILES*8), $90,0                 ; light red
   .byte 0
 ; title: the enemies of the scoring table (sprite Y, pattern, colour)
-TITLE_SY:   .byte 6*8-5,7*8-5,8*8-5,9*8-5,10*8-5,11*8-5,12*8-5
+TITLE_SY:   .byte 6*8-5,8*8-5,10*8-5,12*8-5,14*8-5,16*8-5,18*8-5
 TITLE_SN:   .byte 16,24,32,36,40,44,48
 TITLE_SC:   .byte $03,$0D,$05,$08,$09,$02,$09
 
@@ -4822,16 +4840,16 @@ TXT_HUD:
   .byte $FF
 TXT_TITLE:
   .byte 4,8,"D E F E N D E R",0
-  .byte 5,3,"DEVELOPED BY BOOGS & CCAI",0
   .byte 6,11,"LANDER     150",0
-  .byte 7,11,"MUTANT     150",0
-  .byte 8,11,"BOMBER     250",0
-  .byte 9,11,"POD       1000",0
-  .byte 10,11,"SWARMER    150",0
-  .byte 11,11,"BAITER     200",0
-  .byte 12,11,"HUMANOID   500",0
-  .byte 14,3,"STICK=FLY B1=LASER B2=BOMB",0
-  .byte 15,2,"B1+B2=HYPER   PRESS A BUTTON",0
+  .byte 8,11,"MUTANT     150",0
+  .byte 10,11,"BOMBER     250",0
+  .byte 12,11,"POD       1000",0
+  .byte 14,11,"SWARMER    150",0
+  .byte 16,11,"BAITER     200",0
+  .byte 18,11,"HUMANOID   500",0
+  .byte 20,3,"STICK=FLY B1=LASER B2=BOMB",0
+  .byte 21,2,"B1+B2=HYPER   PRESS A BUTTON",0
+  .byte 23,3,"DEVELOPED BY BOOGS & CCAI",0
   .byte $FF
 TXT_WAVE:
   .byte 9,9,"ATTACK WAVE",0

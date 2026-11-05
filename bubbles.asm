@@ -506,7 +506,7 @@ GAME_LOOP:
 .gl_n4:
   CMP #0
   BNE GAME_LOOP
-  LDA DIRTN                    ; all the dirt gone before the drain: the faucet
+  LDA DIRTN                    ; all the dirt gone before the drain: the faucet, then the next level
   BNE GAME_LOOP
   JMP FAUCET
 
@@ -550,6 +550,7 @@ LEVEL_END:
   BNE .le_b
   LDA #90
   JSR WAIT_FRAMES
+NEXT_LEVEL:
   INC LEVEL                    ; after 99 the counter starts again from 01
   LDA LEVEL
   CMP #100
@@ -597,7 +598,7 @@ FAUCET:
   JSR VDP_INT_ON
   DEC WAITF
   BNE .fa_l
-  ; fall into LOSE_LIFE
+  JMP NEXT_LEVEL               ; the sink is clean: the next level, without the bonus
 
 LOSE_LIFE:
   LDX CURP
@@ -2622,8 +2623,12 @@ DRAW_SINK:
   JSR NT_XY
   LDA #0
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA #T_CTL
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDY #2
 .ds_t:
   LDA #T_RIMT
@@ -2636,11 +2641,15 @@ DRAW_SINK:
   LDA #T_TAP+1
 .ds_t2:
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   INY
   CPY #30
   BNE .ds_t
   LDA #T_CTR
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDX #3
 .ds_r:
   JSR DRAW_GROW
@@ -2652,14 +2661,20 @@ DRAW_SINK:
   JSR NT_XY
   LDA #T_CBL
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDY #28
   LDA #T_RIMB
 .ds_b:
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   DEY
   BNE .ds_b
   LDA #T_CBR
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   RTS
 
 ; X = screen row 3-20: the row again from the grid (keeps X)
@@ -2745,8 +2760,12 @@ DRAW_BVALS:
   LDA #T_LIFE
 .db_b:
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA #$20
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   INX
   CPX #6
   BNE .db_l

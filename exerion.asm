@@ -2592,20 +2592,36 @@ HORIZON:
 .ho_4:
   LDA HBUF
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA HBUF+1
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA HBUF+2
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA HBUF+3
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA HBUF+4
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA HBUF+5
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA HBUF+6
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA HBUF+7
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   DEX
   BNE .ho_4
   LDA HROW                     ; the next row in the next frame

@@ -2806,10 +2806,16 @@ BLINK_UP:
   CLC
   ADC #$31
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA #$55                     ; U
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA #$50                     ; P
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   RTS
 .bu_off:
   LDX CURP
@@ -2818,8 +2824,14 @@ BLINK_UP:
   JSR NT_XY
   LDA #$20
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   RTS
 
 

@@ -294,6 +294,11 @@ TITLE_FRAME:
 ; rows 4-23 of the title and the sprites beside them (VDP interrupt off)
 TITLE_PAGE:
   JSR REC_WIPE
+  LDA #<TXT_BIG                ; RADAR SCOPE in big letters
+  STA TP
+  LDA #>TXT_BIG
+  STA TP+1
+  JSR PRINT
   LDA #<TXT_TITLE
   STA TP
   LDA #>TXT_TITLE
@@ -2092,8 +2097,14 @@ CLEAR_NT:
   LDX #$00
 .cn_l:
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   INX
   BNE .cn_l
   RTS
@@ -2351,10 +2362,16 @@ BLINK_UP:
   CLC
   ADC #$31
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA #$55                     ; U
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA #$50                     ; P
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   RTS
 .bu_off:
   LDX CURP
@@ -2363,8 +2380,14 @@ BLINK_UP:
   JSR NT_XY
   LDA #$20
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   RTS
 
 
@@ -3040,6 +3063,13 @@ SFX_BOOM:                       ; A = id (S_SMALL / S_BIG), X = pan
 ;    REC_XY     X = row, Y = column: VDP write address
 ;    REC_CLS    clears the screen for the sign screen
 ;    REC_SND    A = 0 letter changed, 1 initials confirmed
+;  and optionally (defined before the library):
+;    REC_ITALIAN  the texts of the sign screen in Italian
+;    REC_ONEPL    one player only: no "PLAYER n" line
+;    REC_BMP      a bitmap game: REC_XY only sets the cell, every
+;                 character goes to REC_CHR (A = ASCII, may change
+;                 A, X, Y; the cell moves on by itself or here) and
+;                 REC_CLRROWS (A = first row, X = rows) clears rows
 ;  and has VDATA, P_JOY (2 bytes, 1 = pressed, bits UDLR B1 B2),
 ;  READ_JOY, HIDE_SPRITES, VINT, VDP_INT_OFF (waits for the next frame and
 ;  stops the NMI) and VDP_INT_ON.
@@ -3056,6 +3086,10 @@ SFX_BOOM:                       ; A = id (S_SMALL / S_BIG), X = pan
 ;    REC_SHOW   draws the table (VDP interrupt off)
 ;    REC_WIPE   clears REC_WIPEN rows from REC_ROW (interrupt off)
 ;    REC_TAB    the table: 8 rows of 8 bytes, best first
+;  One against one (wins in a row against the CPU):
+;    REC_LOSE   at RESET and when the CPU wins: the run starts again
+;    REC_WIN    the player beat the CPU (REC_EX set): the run grows
+;               by one and is signed, in place of its own row
 ;               (score 4 BCD bytes, 3 initials, extra byte)
 ; ===============================================================
 SV_BUF     = REC_RAM           ; 512: one sector
@@ -3088,6 +3122,8 @@ REC_PT     = REC_RAM+$27E      ; 2: frames left on this title page
 REC_PG     = REC_RAM+$280      ; title page shown (0 game, 1 table)
 REC_T      = REC_RAM+$281
 REC_R0     = REC_RAM+$282      ; row of the table header being drawn
+REC_STK    = REC_RAM+$283      ; one-against-one games: wins in a row against the CPU (BCD)
+REC_RUN    = REC_RAM+$284      ; offset of the row of this run in the table ($FF = none)
 
 REC_AYL    = $D384             ; AY latches (left, right) and data
 REC_AYR    = $D380
@@ -3461,6 +3497,65 @@ REC_CHECK:
   RTS
 
 ; ---------------------------------------------------------------
+;  REC_WIN / REC_LOSE: a run of wins against the CPU. Every win
+;  signs the run again (the initials of the last signature are
+;  offered), and the row of the run moves up instead of a new row:
+;  the table keeps the run even if the power goes off before it ends.
+; ---------------------------------------------------------------
+REC_LOSE:
+  STZ REC_STK
+  LDA #$FF
+  STA REC_RUN
+  RTS
+
+REC_WIN:
+  SED                          ; one more win (99 at most)
+  LDA REC_STK
+  CMP #$99
+  BEQ .rw_m
+  CLC
+  ADC #1
+  STA REC_STK
+.rw_m:
+  CLD
+  LDX REC_RUN                  ; the old row of the run goes away
+  BMI .rw_c
+.rw_sh:
+  CPX #56
+  BCS .rw_e
+  LDA REC_TAB+8,X
+  STA REC_TAB,X
+  INX
+  BRA .rw_sh
+.rw_e:
+  LDX #7                       ; the last row is empty
+.rw_z:
+  LDA #0
+  CPX #4
+  BCC .rw_zb
+  CPX #7
+  BCS .rw_zb
+  LDA #'-'
+.rw_zb:
+  STA REC_TAB+56,X
+  DEX
+  BPL .rw_z
+.rw_c:
+  LDA REC_STK
+  STA REC_SC
+  STZ REC_SC+1
+  STZ REC_SC+2
+  STZ REC_SC+3
+  STZ REC_PL
+  JSR REC_CHECK
+  LDA #$FF
+  BCC .rw_p
+  LDA REC_POS
+.rw_p:
+  STA REC_RUN
+  JMP REC_SAVE
+
+; ---------------------------------------------------------------
 ;  REC_SIGN: the sign screen. UP / DOWN change the letter,
 ;  LEFT / RIGHT move, a button moves on (on the third letter it
 ;  confirms); after 30 s without a key it confirms by itself.
@@ -3470,30 +3565,32 @@ REC_SIGN:
   JSR HIDE_SPRITES               ; nothing of the game over the table
   JSR REC_CLS
   LDX #REC_SROW-4
-  LDY #11
+  LDY #RT_NEWX
   LDA #(RT_NEW-REC_TXT)
   JSR REC_PUTS
+  .ifndef REC_ONEPL
   LDX #REC_SROW-2
-  LDY #12
+  LDY #RT_PLX
   LDA #(RT_PLAYER-REC_TXT)
   JSR REC_PUTS
   LDA REC_PL
   CLC
   ADC #'1'
-  STA VDATA
+  JSR REC_OUT
+  .endif
   LDA #REC_SROW
   STA REC_R0
   JSR REC_SHOW_R
   LDX #REC_SROW+10
-  LDY #7
+  LDY #RT_HX
   LDA #(RT_H1-REC_TXT)
   JSR REC_PUTS
   LDX #REC_SROW+11
-  LDY #7
+  LDY #RT_HX
   LDA #(RT_H2-REC_TXT)
   JSR REC_PUTS
   LDX #REC_SROW+12
-  LDY #7
+  LDY #RT_HX
   LDA #(RT_H3-REC_TXT)
   JSR REC_PUTS
   JSR VDP_INT_ON
@@ -3653,7 +3750,7 @@ REC_INITS:
   BEQ .ri_p
   LDA #'_'
 .ri_p:
-  STA VDATA
+  JSR REC_OUT
   INX
   INC REC_T
   LDA REC_T
@@ -3731,7 +3828,7 @@ REC_SHOW_R:                    ; the table with its header on row REC_R0
 .sh_h:
   LDA REC_HEAD,X
   BEQ .sh_r
-  STA VDATA
+  JSR REC_OUT
   INX
   BRA .sh_h
 .sh_r:
@@ -3886,7 +3983,17 @@ REC_DEC:
 ; are at least 14 cycles apart: while it draws the screen the TMS9918A needs about 8 us
 ; between two accesses, or a character is lost (the emulators do not show it)
 REC_OUT:
+  .ifdef REC_BMP
+  PHA                          ; a bitmap game draws the character in its cell
+  PHX
+  PHY
+  JSR REC_CHR
+  PLY
+  PLX
+  PLA
+  .else
   STA VDATA
+  .endif
   RTS
 
 ; REC_WIPEN rows from REC_ROW blank (REC_WIPE_R: from REC_R0)
@@ -3894,6 +4001,11 @@ REC_WIPE:
   LDA #REC_ROW
   STA REC_R0
 REC_WIPE_R:
+  .ifdef REC_BMP
+  LDA REC_R0
+  LDX #REC_WIPEN
+  JMP REC_CLRROWS
+  .endif
   LDA REC_R0
   STA REC_K
   CLC
@@ -3924,18 +4036,32 @@ REC_PUTS:
 .pu_l:
   LDA REC_TXT,X
   BEQ .pu_e
-  STA VDATA
+  JSR REC_OUT
   INX
   BRA .pu_l
 .pu_e:
   RTS
 
 REC_TXT:
+  .ifdef REC_ITALIAN
+RT_NEW:    .byte "NUOVO RECORD",0
+RT_PLAYER: .byte "GIOCATORE ",0
+RT_H1:     .byte "SU/GIU'         LETTERA",0
+RT_H2:     .byte "SINISTRA/DESTRA SPOSTA",0
+RT_H3:     .byte "TASTO           AVANTI/OK",0
+RT_NEWX    = 10                ; columns of the texts
+RT_PLX     = 10
+RT_HX      = 4
+  .else
 RT_NEW:    .byte "NEW RECORD",0
 RT_PLAYER: .byte "PLAYER ",0
 RT_H1:     .byte "UP/DOWN    LETTER",0
 RT_H2:     .byte "LEFT/RIGHT MOVE",0
 RT_H3:     .byte "BUTTON     NEXT/OK",0
+RT_NEWX    = 11
+RT_PLX     = 12
+RT_HX      = 7
+  .endif
 
 
 
@@ -3981,7 +4107,6 @@ TXT_BOT:
   .byte 22,20,"STAGE",0
   .byte $FF
 TXT_TITLE:
-  .byte 4,10,"RADAR SCOPE",0
   .byte 7,8,"- SCORE TABLE -",0
   .byte 9,13,"FAR       30",0
   .byte 11,13,"MIDDLE    80",0
@@ -4077,7 +4202,12 @@ FONT:
 ; ===============================================================
 ;  GRAPHICS AND SOUND TABLES (generated)
 ; ===============================================================
-FLD_P0:                  ; third 0: 67 tiles from 96
+; big title RADAR SCOPE on rows 3-4 (text records, end = $FF)
+TXT_BIG:
+  .byte 3,5,163,164,167,168,171,172,167,168,163,164,32,32,175,176,179,180,183,184,187,188,191,192,0
+  .byte 4,5,165,166,169,170,173,174,169,170,165,166,32,32,177,178,181,182,185,186,189,190,193,194,0
+  .byte $FF
+FLD_P0:                  ; third 0: 99 tiles from 96
   .byte $00,$00,$44,$38,$7C,$54,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
   .byte $00,$00,$11,$0E,$1F,$15,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
   .byte $00,$00,$04,$03,$07,$05,$00,$00,$00,$00,$40,$80,$C0,$40,$00,$00
@@ -4111,7 +4241,23 @@ FLD_P0:                  ; third 0: 67 tiles from 96
   .byte $00,$01,$07,$0B,$05,$04,$00,$00,$00,$00,$C0,$A0,$40,$40,$00,$00
   .byte $00,$00,$01,$02,$01,$01,$00,$00,$00,$40,$F0,$E8,$50,$10,$00,$00
   .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00
-  .byte $00,$00,$00,$00,$00,$00,$00,$00
+  .byte $00,$00,$00,$00,$00,$00,$00,$00,$00,$1F,$1F,$18,$18,$18,$18,$1F
+  .byte $00,$E0,$E0,$18,$18,$18,$18,$E0,$1F,$19,$19,$18,$18,$18,$18,$00
+  .byte $E0,$80,$80,$60,$60,$18,$18,$00,$00,$01,$01,$06,$06,$18,$18,$18
+  .byte $00,$80,$80,$60,$60,$18,$18,$18,$18,$1F,$1F,$18,$18,$18,$18,$00
+  .byte $18,$F8,$F8,$18,$18,$18,$18,$00,$00,$1F,$1F,$18,$18,$18,$18,$18
+  .byte $00,$E0,$E0,$18,$18,$18,$18,$18,$18,$18,$18,$18,$18,$1F,$1F,$00
+  .byte $18,$18,$18,$18,$18,$E0,$E0,$00,$00,$07,$07,$18,$18,$18,$18,$07
+  .byte $00,$E0,$E0,$18,$18,$00,$00,$E0,$07,$00,$00,$18,$18,$07,$07,$00
+  .byte $E0,$18,$18,$18,$18,$E0,$E0,$00,$00,$07,$07,$18,$18,$18,$18,$18
+  .byte $00,$E0,$E0,$18,$18,$00,$00,$00,$18,$18,$18,$18,$18,$07,$07,$00
+  .byte $00,$00,$00,$18,$18,$E0,$E0,$00,$00,$07,$07,$18,$18,$18,$18,$18
+  .byte $00,$E0,$E0,$18,$18,$18,$18,$18,$18,$18,$18,$18,$18,$07,$07,$00
+  .byte $18,$18,$18,$18,$18,$E0,$E0,$00,$00,$1F,$1F,$18,$18,$18,$18,$1F
+  .byte $00,$E0,$E0,$18,$18,$18,$18,$E0,$1F,$18,$18,$18,$18,$18,$18,$00
+  .byte $E0,$00,$00,$00,$00,$00,$00,$00,$00,$1F,$1F,$18,$18,$18,$18,$1F
+  .byte $00,$F8,$F8,$00,$00,$00,$00,$E0,$1F,$18,$18,$18,$18,$1F,$1F,$00
+  .byte $E0,$00,$00,$00,$00,$F8,$F8,$00
 FLD_C0:
   .byte $D5,$D4,$D5,$D4,$D5,$D4,$D5,$D4,$D5,$D4,$D5,$D4,$D5,$D4,$D5,$D4
   .byte $D5,$D4,$D5,$D4,$D5,$D4,$D5,$D4,$D5,$D4,$D5,$D4,$D5,$D4,$D5,$D4
@@ -4146,7 +4292,23 @@ FLD_C0:
   .byte $94,$94,$94,$94,$94,$94,$94,$94,$94,$94,$94,$94,$94,$94,$94,$94
   .byte $94,$94,$94,$94,$94,$94,$94,$94,$94,$94,$94,$94,$94,$94,$94,$94
   .byte $75,$75,$75,$75,$75,$75,$75,$75,$75,$74,$75,$74,$75,$74,$75,$74
-  .byte $74,$74,$74,$74,$74,$74,$74,$74
+  .byte $74,$74,$74,$74,$74,$74,$74,$74,$F0,$F0,$F0,$F0,$70,$70,$70,$70
+  .byte $F0,$F0,$F0,$F0,$70,$70,$70,$70,$70,$70,$50,$50,$50,$50,$40,$40
+  .byte $70,$70,$50,$50,$50,$50,$40,$40,$F0,$F0,$F0,$F0,$70,$70,$70,$70
+  .byte $F0,$F0,$F0,$F0,$70,$70,$70,$70,$70,$70,$50,$50,$50,$50,$40,$40
+  .byte $70,$70,$50,$50,$50,$50,$40,$40,$F0,$F0,$F0,$F0,$70,$70,$70,$70
+  .byte $F0,$F0,$F0,$F0,$70,$70,$70,$70,$70,$70,$50,$50,$50,$50,$40,$40
+  .byte $70,$70,$50,$50,$50,$50,$40,$40,$F0,$F0,$F0,$F0,$70,$70,$70,$70
+  .byte $F0,$F0,$F0,$F0,$70,$70,$70,$70,$70,$70,$50,$50,$50,$50,$40,$40
+  .byte $70,$70,$50,$50,$50,$50,$40,$40,$F0,$F0,$F0,$F0,$70,$70,$70,$70
+  .byte $F0,$F0,$F0,$F0,$70,$70,$70,$70,$70,$70,$50,$50,$50,$50,$40,$40
+  .byte $70,$70,$50,$50,$50,$50,$40,$40,$F0,$F0,$F0,$F0,$70,$70,$70,$70
+  .byte $F0,$F0,$F0,$F0,$70,$70,$70,$70,$70,$70,$50,$50,$50,$50,$40,$40
+  .byte $70,$70,$50,$50,$50,$50,$40,$40,$F0,$F0,$F0,$F0,$70,$70,$70,$70
+  .byte $F0,$F0,$F0,$F0,$70,$70,$70,$70,$70,$70,$50,$50,$50,$50,$40,$40
+  .byte $70,$70,$50,$50,$50,$50,$40,$40,$F0,$F0,$F0,$F0,$70,$70,$70,$70
+  .byte $F0,$F0,$F0,$F0,$70,$70,$70,$70,$70,$70,$50,$50,$50,$50,$40,$40
+  .byte $70,$70,$50,$50,$50,$50,$40,$40
 FLD_P1:                  ; third 1: 92 tiles from 96
   .byte $00,$81,$5A,$3C,$7E,$BD,$99,$00,$00,$00,$00,$00,$00,$00,$00,$00
   .byte $00,$20,$16,$0F,$1F,$2F,$26,$00,$00,$40,$80,$00,$80,$40,$40,$00
@@ -4345,8 +4507,8 @@ HUD_COL:
 GFX_LOAD:
   .byte 1, $00,$41, <512,>512, <FONT,>FONT
   .byte 2, $00,$61, <512,>512, $F1,0
-  .byte 1, $00,$43, <536,>536, <FLD_P0,>FLD_P0
-  .byte 1, $00,$63, <536,>536, <FLD_C0,>FLD_C0
+  .byte 1, $00,$43, <792,>792, <FLD_P0,>FLD_P0
+  .byte 1, $00,$63, <792,>792, <FLD_C0,>FLD_C0
   .byte 1, $00,$49, <512,>512, <FONT,>FONT
   .byte 2, $00,$69, <512,>512, $F1,0
   .byte 1, $00,$4B, <736,>736, <FLD_P1,>FLD_P1

@@ -536,9 +536,13 @@ GAME_LOOP:
   BNE .gl_stop
   JSR UPDATE_HOG
   JSR TAKE_SEEDS
+  LDA GSTATE                   ; the last seed: the garden stops at once
+  BNE .gl_hud
   JSR PORTALS
   JSR UPDATE_TIME
   JSR UPDATE_CREATURES
+  LDA GSTATE                   ; (a magpie took the last seed)
+  BNE .gl_hud
   JSR COLLIDE
   BRA .gl_hud
 .gl_stop:
@@ -575,7 +579,7 @@ GARDEN_CLEAR:
   BPL .gc_e
   JSR BUILD_SAT
   JSR VDP_INT_ON
-  LDA #60
+  LDA #20
   JSR WAIT_FRAMES
   ; ---- bonus: 10 per seed taken by the hedgehog
   STZ BONL
@@ -1162,13 +1166,19 @@ PUT_WG:
   CLC
   ADC #$31
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA #'-'
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA GARDEN
   AND #3
   CLC
   ADC #$31
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   RTS
 
 
@@ -1222,6 +1232,8 @@ DRAW_BOTTOM:
   JSR PUT_WG
   LDA #$20
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDX CURP                     ; spare lives (at most 4)
   LDA LIVES,X
   BEQ .db_z
@@ -1236,18 +1248,26 @@ DRAW_BOTTOM:
   LDA #T_LIFE
 .db_b:
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   INX
   CPX #4
   BNE .db_l
   LDA #$20
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA #T_CRYS
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA LEFT                     ; seeds left, 3 digits
   JSR BIN2BCD3
   LDA T1
   ORA #$30
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA T0
   JSR PUT_2
   ; fall into DRAW_TIME

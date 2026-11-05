@@ -227,6 +227,15 @@ CAP_MAX     = 4          ; highest multiplier
 TAIL_COL    = $B1        ; trail: light yellow on black
 BORD_COL    = $41        ; border: dark blue on black
 BTN_MASK    = %00110000
+
+; ---------------- records on the SD (lib_records.asm, at the end of the file) ----------------
+REC_ZONE    = 17           ; fixed zone of the game in the save area
+REC_RAM     = $7B00        ; $2A0 bytes of free RAM
+REC_ROW     = 5            ; table header on this row of the title, rows +1..+8 the table
+REC_WIPEN   = 9            ; rows of the title that give way to the table
+REC_JOY2    = 0            ; $FF = both joysticks sign, 0 = the player's own
+REC_SROW    = 6            ; table header on the sign screen
+REC_BMP     = 1            ; bitmap: characters through PUT_CHAR
 HIDE_Y      = $C0
 PROBE_COL   = $0F
 CX0         = 128        ; where the probe appears
@@ -265,9 +274,6 @@ RESET:
   STA DDRA_JOY
   STA DDRB_JOY
   STA VINT                     ; VDP interrupt off (R1 = $C6)
-  STA HIA
-  STA HIB
-  STA HIC
   STA FRAME_CNT
   STA LAST_FRAME
   STA CURP
@@ -289,6 +295,8 @@ RESET:
   STA NPL
   LDA #$A5
   STA RND
+  JSR REC_INIT                 ; the table from the SD (or an empty one)
+  JSR REC_HISC
   JSR HIDE_SPRITES
   JMP TITLE
 
@@ -307,6 +315,13 @@ TITLE:
   LDA #CMD_GAME
   STA SND_CMD
   JSR VDP_INT_OFF
+  JSR TITLE_PAGE
+  JSR REC_TITLE
+  JSR VDP_INT_ON
+  BRA TITLE_REL
+
+; the title page with the particles and their sprites (VDP interrupt off)
+TITLE_PAGE:
   JSR CLEAR_ALL
   JSR CLEAR_PARTS
   JSR DRAW_HUD
@@ -345,16 +360,36 @@ TITLE:
   INX
   CPX #8
   BNE .t_sp
-  JSR VDP_INT_ON
-.t_rel:                        ; buttons released...
+  RTS
+
+; every 8 s / 5 s the title page and the table take turns
+TITLE_TICK:
   JSR WAIT_FRAME
+  JSR REC_TICK
+  BCC .tt_r
+  JSR VDP_INT_OFF
+  LDA REC_PG
+  BEQ .tt_t
+  JSR HIDE_SPRITES
+  JSR CLEAR_PLAYFIELD
+  JSR REC_SHOW
+  BRA .tt_on
+.tt_t:
+  JSR TITLE_PAGE
+.tt_on:
+  JSR VDP_INT_ON
+.tt_r:
+  RTS
+
+TITLE_REL:                     ; buttons released...
+  JSR TITLE_TICK
   JSR READ_JOY
   LDA P_JOY
   ORA P_JOY+1
   AND #BTN_MASK
-  BNE .t_rel
+  BNE TITLE_REL
 .t_press:                      ; ...then button 1 = 1 player, button 2 = 2 players
-  JSR WAIT_FRAME
+  JSR TITLE_TICK
   JSR READ_JOY
   LDA FRAME_CNT                ; the pulsar of the table pulses
   AND #$08
@@ -598,8 +633,80 @@ GAME_OVER:
   JSR VDP_INT_ON
   LDA #90
   JSR WAIT_FRAMES
+  LDX #$00                     ; every player: into the table of the records?
+.go_r:
+  STX REC_PL
+  LDA SCA,X
+  STA REC_SC
+  LDA SCB,X
+  STA REC_SC+1
+  LDA SCC,X
+  STA REC_SC+2
+  STZ REC_SC+3
+  LDA WAVE,X                   ; extra byte: the wave (0 = the first)
+  INC A
+  STA REC_EX
+  JSR REC_CHECK
+  LDX REC_PL
+  INX
+  CPX NPL
+  BNE .go_r
+  LDA REC_DIRTY
+  BEQ .go_press
+  JSR REC_SAVE                 ; one write on the SD
+  JSR REC_HISC
+  JMP TITLE
+.go_press:
   JSR WAIT_FIRE
   JMP TITLE
+
+REC_CLR:                       ; the rows of the table: white on black, like the playfield
+  PHA
+  LDA #$F1
+  STA CLRCOL
+  PLA
+  JMP CLEAR_ROWS
+
+; the best row of the table is the record of the title and the HUD
+REC_HISC:
+  LDA REC_TAB+0
+  STA HIA
+  LDA REC_TAB+1
+  STA HIB
+  LDA REC_TAB+2
+  STA HIC
+  RTS
+
+; hooks of lib_records.asm (bitmap: the characters in the cells)
+REC_XY:                        ; X = row, Y = column
+  STX CELLR
+  STY CELLC
+  LDA #$F1
+  STA TCOL
+  RTS
+REC_CHR:                       ; A = character in the cell, then the next cell
+  JSR PUT_CHAR
+  INC CELLC
+  RTS
+REC_CLRROWS = REC_CLR       ; A = first row, X = rows
+REC_CLS = CLEAR_ALL
+REC_SND:                       ; A = 0 a letter, 1 the initials confirmed (the game's whistles)
+  PHX
+  LDX #2
+  CMP #0
+  BNE .rn_s
+  LDA #W_POS
+  BRA .rn_p
+.rn_s:
+  LDA #W_WAVE
+.rn_p:
+  JSR SFX_WHISTLE
+  PLX
+  RTS
+REC_NAME:  .byte "QUANTUM         "
+REC_HEAD:  .byte "BEST PROBES",0
+REC_XLBL:  .byte "WAVE ",0
+
 
 
 ; ===============================================================
@@ -3625,3 +3732,1030 @@ S_SMALL = 1
 S_MED = 2
 S_PROBE = 3
 S_BIG = S_PROBE
+
+; ==== RECORDS LIBRARY (dev/lib_records.asm) BEGIN ====
+
+; ===============================================================
+;  RECORDS ON THE SD (dev/lib_records.asm, see SD_SALVATAGGI.md)
+;  8 best scores signed with 3 initials, kept in the zone
+;  REC_ZONE of the save area (sector 32768 + zone * 16): two
+;  copies (sectors 0 and 1 of the zone) written in turn.
+;  Without the BIOS KEYB/SD ($4C at $FD18/$FD1B/$FD1E) the table
+;  lives only in RAM.
+;
+;  The game defines:
+;    REC_ZONE   fixed zone number of the game (1-127)
+;    REC_RAM    $2A0 bytes of free RAM (buffer, table, variables)
+;    REC_ROW    screen row of the table header (rows +1..+8 =
+;               the table; the sign screen also uses rows -4,
+;               -2 and +10..+12)
+;    REC_WIPEN  rows cleared from REC_ROW for the table (>= 9)
+;    REC_SROW   row of the table header on the sign screen (rows
+;               -4, -2 and +10..+12 too); usually REC_ROW
+;    REC_JOY2   $FF = both joysticks sign, 0 = the player's own
+;    REC_NAME   16 bytes: name of the game, spaces at the end
+;    REC_HEAD   header of the table, 0 at the end
+;    REC_XLBL   label of the extra byte ("LEG "), 0 at the end
+;    REC_XY     X = row, Y = column: VDP write address
+;    REC_CLS    clears the screen for the sign screen
+;    REC_SND    A = 0 letter changed, 1 initials confirmed
+;  and optionally (defined before the library):
+;    REC_ITALIAN  the texts of the sign screen in Italian
+;    REC_ONEPL    one player only: no "PLAYER n" line
+;    REC_BMP      a bitmap game: REC_XY only sets the cell, every
+;                 character goes to REC_CHR (A = ASCII, may change
+;                 A, X, Y; the cell moves on by itself or here) and
+;                 REC_CLRROWS (A = first row, X = rows) clears rows
+;  and has VDATA, P_JOY (2 bytes, 1 = pressed, bits UDLR B1 B2),
+;  READ_JOY, HIDE_SPRITES, VINT, VDP_INT_OFF (waits for the next frame and
+;  stops the NMI) and VDP_INT_ON.
+;
+;  Calls:
+;    REC_INIT   at RESET (VDP interrupt off): reads the table
+;    REC_CHECK  after the game over: REC_SC (4 BCD bytes, low
+;               first), REC_EX (extra byte), REC_PL (player 0/1);
+;               C = 1 if it entered the table (signed on the spot)
+;    REC_SAVE   after the checks: one write, if anything changed
+;    REC_TITLE  at the title: page 0 (the game's own) for 8 s
+;    REC_TICK   every title frame: C = 1 when the page changes,
+;               REC_PG = page to draw (0 game, 1 table)
+;    REC_SHOW   draws the table (VDP interrupt off)
+;    REC_WIPE   clears REC_WIPEN rows from REC_ROW (interrupt off)
+;    REC_TAB    the table: 8 rows of 8 bytes, best first
+;  One against one (wins in a row against the CPU):
+;    REC_LOSE   at RESET and when the CPU wins: the run starts again
+;    REC_WIN    the player beat the CPU (REC_EX set): the run grows
+;               by one and is signed, in place of its own row
+;               (score 4 BCD bytes, 3 initials, extra byte)
+; ===============================================================
+SV_BUF     = REC_RAM           ; 512: one sector
+REC_TAB    = REC_RAM+$200      ; 64: 8 rows x 8 bytes
+SV_KEEP    = REC_RAM+$240      ; 31: $44-$4E and $0306-$0319 during the call
+SV_OK      = REC_RAM+$260      ; 1 = the BIOS has the sector routines
+SV_SEC     = REC_RAM+$261      ; sector of the zone (0-15)
+SV_RW      = REC_RAM+$262      ; 0 read, 1 write
+SV_VI      = REC_RAM+$263      ; VINT before the call
+REC_CNT    = REC_RAM+$264      ; 2: write counter of the copy in RAM
+REC_OLD    = REC_RAM+$266      ; copy to write next (the older one)
+REC_V      = REC_RAM+$267      ; 1 = copy 0 was valid
+REC_DIRTY  = REC_RAM+$268      ; 1 = the table changed
+REC_SC     = REC_RAM+$269      ; 4: score to check (BCD, low first)
+REC_EX     = REC_RAM+$26D      ; extra byte of the row
+REC_PL     = REC_RAM+$26E      ; player who signs (0 / 1)
+REC_POS    = REC_RAM+$26F      ; offset of the row being signed
+REC_CUR    = REC_RAM+$270      ; initial being edited (0-2)
+REC_J      = REC_RAM+$271      ; joystick, the one before, new presses
+REC_JP     = REC_RAM+$272
+REC_JN     = REC_RAM+$273
+REC_RPT    = REC_RAM+$274      ; frames before the letter repeats
+REC_TMO    = REC_RAM+$275      ; 2: frames before the initials confirm by themselves
+REC_NZ     = REC_RAM+$277      ; 1 = a digit was printed (no more blanks)
+REC_K      = REC_RAM+$278
+REC_LAST   = REC_RAM+$279      ; 3: initials signed last
+REC_SL     = REC_RAM+$27C      ; 2: checksum
+REC_SH     = REC_RAM+$27D
+REC_PT     = REC_RAM+$27E      ; 2: frames left on this title page
+REC_PG     = REC_RAM+$280      ; title page shown (0 game, 1 table)
+REC_T      = REC_RAM+$281
+REC_R0     = REC_RAM+$282      ; row of the table header being drawn
+REC_STK    = REC_RAM+$283      ; one-against-one games: wins in a row against the CPU (BCD)
+REC_RUN    = REC_RAM+$284      ; offset of the row of this run in the table ($FF = none)
+
+REC_AYL    = $D384             ; AY latches (left, right) and data
+REC_AYR    = $D380
+REC_PAGE_T = 480               ; frames of the title page of the game (8 s)
+REC_TAB_T  = 300               ; frames of the table (5 s)
+REC_WAITT  = 1800              ; 30 s without a key: the initials are confirmed
+
+; sector header: signature, version, zone, type 1 = records,
+; 1 table, 8 rows, 8 bytes per row
+REC_HDR:
+  .byte "MVSV",1,REC_ZONE,1,1,8,8
+REC_LETTERS:
+  .byte "ABCDEFGHIJKLMNOPQRSTUVWXYZ ."
+REC_NLET = 28
+
+; ---------------------------------------------------------------
+;  SV_CALL: A = 0 read / 1 write sector SV_SEC of the zone in
+;  SV_BUF. C = 0 ok, 1 error or no BIOS. Keeps the game's RAM
+;  that the BIOS driver uses; the NMI is off during the call.
+; ---------------------------------------------------------------
+SV_CALL:
+  STA SV_RW
+  LDA SV_OK
+  BNE .sv_go
+  SEC
+  RTS
+.sv_go:
+  LDA VINT
+  STA SV_VI
+  JSR VDP_INT_OFF              ; no NMI while $44-$4E belong to the driver
+  LDX #8                       ; both AYs silent (the last note would hang)
+.sv_sil:
+  STX REC_AYL
+  STZ REC_AYL+1
+  STX REC_AYR
+  STZ REC_AYR+1
+  INX
+  CPX #11
+  BNE .sv_sil
+  LDX #10
+.sv_k1:
+  LDA $44,X
+  STA SV_KEEP,X
+  DEX
+  BPL .sv_k1
+  LDX #19
+.sv_k2:
+  LDA $0306,X
+  STA SV_KEEP+11,X
+  DEX
+  BPL .sv_k2
+  JSR $FD1E                    ; SD init: always (the game may have changed sd_type)
+  BCS .sv_done
+  LDA SV_SEC                   ; SD_LBA = 32768 + zone * 16 + sector
+  AND #$0F
+  ORA #((REC_ZONE<<4)&$F0)
+  STA $0316
+  LDA #($80+(REC_ZONE>>4))
+  STA $0317
+  STZ $0318
+  STZ $0319
+  LDX #<SV_BUF
+  LDY #>SV_BUF
+  LDA SV_RW
+  BNE .sv_w
+  JSR $FD18
+  BRA .sv_done
+.sv_w:
+  JSR $FD1B
+.sv_done:
+  PHP
+  LDX #10
+.sv_r1:
+  LDA SV_KEEP,X
+  STA $44,X
+  DEX
+  BPL .sv_r1
+  LDX #19
+.sv_r2:
+  LDA SV_KEEP+11,X
+  STA $0306,X
+  DEX
+  BPL .sv_r2
+  LDA SV_VI
+  BEQ .sv_e
+  JSR VDP_INT_ON
+.sv_e:
+  PLP
+  RTS
+
+; ---------------------------------------------------------------
+;  REC_INIT: the BIOS check, then the newest valid copy (or the
+;  empty table)
+; ---------------------------------------------------------------
+REC_INIT:
+  STZ SV_OK
+  LDA $FD18
+  CMP #$4C
+  BNE .ri_nb
+  LDA $FD1B
+  CMP #$4C
+  BNE .ri_nb
+  LDA $FD1E
+  CMP #$4C
+  BNE .ri_nb
+  INC SV_OK
+.ri_nb:
+  LDX #63                      ; empty table: score 0, "---"
+.ri_e:
+  TXA
+  AND #7
+  CMP #4
+  BCC .ri_z
+  CMP #7
+  BEQ .ri_z
+  LDA #'-'
+  BRA .ri_s
+.ri_z:
+  LDA #0
+.ri_s:
+  STA REC_TAB,X
+  DEX
+  BPL .ri_e
+  LDA #'A'
+  STA REC_LAST
+  STA REC_LAST+1
+  STA REC_LAST+2
+  STZ REC_CNT
+  STZ REC_CNT+1
+  STZ REC_OLD
+  STZ REC_V
+  STZ REC_DIRTY
+  STZ REC_PG
+  STZ SV_SEC                   ; copy 0
+  LDA #0
+  JSR SV_CALL
+  BCS .ri_1
+  JSR REC_VALID
+  BCS .ri_1
+  JSR REC_TAKE
+  LDA #1                       ; the next write goes to copy 1
+  STA REC_OLD
+  STA REC_V
+.ri_1:
+  LDA #1                       ; copy 1
+  STA SV_SEC
+  LDA #0
+  JSR SV_CALL
+  BCS .ri_e2
+  JSR REC_VALID
+  BCS .ri_e2
+  LDA REC_V                    ; both valid: the higher counter wins
+  BEQ .ri_t1
+  LDA SV_BUF+11
+  CMP REC_CNT+1
+  BCC .ri_e2
+  BNE .ri_t1
+  LDA SV_BUF+10
+  CMP REC_CNT
+  BCC .ri_e2
+  BEQ .ri_e2
+.ri_t1:
+  JSR REC_TAKE
+  STZ REC_OLD                  ; the next write goes to copy 0
+.ri_e2:
+  RTS
+
+; SV_BUF valid for this game? C = 0 yes
+REC_VALID:
+  LDX #9
+.rv_h:
+  LDA SV_BUF,X
+  CMP REC_HDR,X
+  BNE .rv_no
+  DEX
+  BPL .rv_h
+  JSR REC_SUM
+  LDA REC_SL
+  CMP SV_BUF+510
+  BNE .rv_no
+  LDA REC_SH
+  CMP SV_BUF+511
+  BNE .rv_no
+  CLC
+  RTS
+.rv_no:
+  SEC
+  RTS
+
+; rows and counter of SV_BUF into RAM
+REC_TAKE:
+  LDX #63
+.rt_l:
+  LDA SV_BUF+32,X
+  STA REC_TAB,X
+  DEX
+  BPL .rt_l
+  LDA SV_BUF+10
+  STA REC_CNT
+  LDA SV_BUF+11
+  STA REC_CNT+1
+  RTS
+
+; 16-bit sum of the bytes 0-509 of SV_BUF -> REC_SL / REC_SH
+REC_SUM:
+  STZ REC_SL
+  STZ REC_SH
+  LDX #0
+.rs_a:
+  LDA SV_BUF,X
+  CLC
+  ADC REC_SL
+  STA REC_SL
+  BCC .rs_a1
+  INC REC_SH
+.rs_a1:
+  INX
+  BNE .rs_a
+.rs_b:
+  LDA SV_BUF+256,X
+  CLC
+  ADC REC_SL
+  STA REC_SL
+  BCC .rs_b1
+  INC REC_SH
+.rs_b1:
+  INX
+  CPX #254
+  BNE .rs_b
+  RTS
+
+; ---------------------------------------------------------------
+;  REC_SAVE: if the table changed, one write into the older copy
+;  (C = 1 if it could not be written: the table stays in RAM)
+; ---------------------------------------------------------------
+REC_SAVE:
+  LDA REC_DIRTY
+  BNE .rv_go
+  CLC
+  RTS
+.rv_go:
+  STZ REC_DIRTY
+  LDX #0
+.rw_c:
+  STZ SV_BUF,X
+  STZ SV_BUF+256,X
+  INX
+  BNE .rw_c
+  LDX #9
+.rw_h:
+  LDA REC_HDR,X
+  STA SV_BUF,X
+  DEX
+  BPL .rw_h
+  LDA REC_CNT                  ; counter + 1
+  CLC
+  ADC #1
+  STA SV_BUF+10
+  LDA REC_CNT+1
+  ADC #0
+  STA SV_BUF+11
+  LDX #15
+.rw_n:
+  LDA REC_NAME,X
+  STA SV_BUF+16,X
+  DEX
+  BPL .rw_n
+  LDX #63
+.rw_t:
+  LDA REC_TAB,X
+  STA SV_BUF+32,X
+  DEX
+  BPL .rw_t
+  JSR REC_SUM
+  LDA REC_SL
+  STA SV_BUF+510
+  LDA REC_SH
+  STA SV_BUF+511
+  LDA REC_OLD
+  STA SV_SEC
+  LDA #1
+  JSR SV_CALL
+  BCS .rw_e
+  LDA SV_BUF+10                ; written: this copy is now the newer one
+  STA REC_CNT
+  LDA SV_BUF+11
+  STA REC_CNT+1
+  LDA REC_OLD
+  EOR #1
+  STA REC_OLD
+  CLC
+.rw_e:
+  RTS
+
+; ---------------------------------------------------------------
+;  REC_CHECK: REC_SC enters the table? Then the row is inserted
+;  and signed (REC_SIGN). C = 1 if it entered.
+; ---------------------------------------------------------------
+REC_CHECK:
+  LDA REC_SC
+  ORA REC_SC+1
+  ORA REC_SC+2
+  ORA REC_SC+3
+  BEQ .rc_no                   ; no points, no record
+  LDX #0
+.rc_f:
+  LDA REC_SC+3                 ; higher than this row? (equal = below it)
+  CMP REC_TAB+3,X
+  BCC .rc_nx
+  BNE .rc_in
+  LDA REC_SC+2
+  CMP REC_TAB+2,X
+  BCC .rc_nx
+  BNE .rc_in
+  LDA REC_SC+1
+  CMP REC_TAB+1,X
+  BCC .rc_nx
+  BNE .rc_in
+  LDA REC_SC
+  CMP REC_TAB,X
+  BEQ .rc_nx
+  BCS .rc_in
+.rc_nx:
+  TXA
+  CLC
+  ADC #8
+  TAX
+  CPX #64
+  BNE .rc_f
+.rc_no:
+  CLC
+  RTS
+.rc_in:
+  STX REC_POS
+  LDY #56                      ; the rows below move down one place
+.rc_sh:
+  CPY REC_POS
+  BEQ .rc_put
+  DEY
+  LDA REC_TAB,Y
+  STA REC_TAB+8,Y
+  BRA .rc_sh
+.rc_put:
+  LDA REC_SC
+  STA REC_TAB,X
+  LDA REC_SC+1
+  STA REC_TAB+1,X
+  LDA REC_SC+2
+  STA REC_TAB+2,X
+  LDA REC_SC+3
+  STA REC_TAB+3,X
+  LDA REC_LAST
+  STA REC_TAB+4,X
+  LDA REC_LAST+1
+  STA REC_TAB+5,X
+  LDA REC_LAST+2
+  STA REC_TAB+6,X
+  LDA REC_EX
+  STA REC_TAB+7,X
+  LDA #1
+  STA REC_DIRTY
+  JSR REC_SIGN
+  LDX REC_POS
+  LDA REC_TAB+4,X
+  STA REC_LAST
+  LDA REC_TAB+5,X
+  STA REC_LAST+1
+  LDA REC_TAB+6,X
+  STA REC_LAST+2
+  SEC
+  RTS
+
+; ---------------------------------------------------------------
+;  REC_WIN / REC_LOSE: a run of wins against the CPU. Every win
+;  signs the run again (the initials of the last signature are
+;  offered), and the row of the run moves up instead of a new row:
+;  the table keeps the run even if the power goes off before it ends.
+; ---------------------------------------------------------------
+REC_LOSE:
+  STZ REC_STK
+  LDA #$FF
+  STA REC_RUN
+  RTS
+
+REC_WIN:
+  SED                          ; one more win (99 at most)
+  LDA REC_STK
+  CMP #$99
+  BEQ .rw_m
+  CLC
+  ADC #1
+  STA REC_STK
+.rw_m:
+  CLD
+  LDX REC_RUN                  ; the old row of the run goes away
+  BMI .rw_c
+.rw_sh:
+  CPX #56
+  BCS .rw_e
+  LDA REC_TAB+8,X
+  STA REC_TAB,X
+  INX
+  BRA .rw_sh
+.rw_e:
+  LDX #7                       ; the last row is empty
+.rw_z:
+  LDA #0
+  CPX #4
+  BCC .rw_zb
+  CPX #7
+  BCS .rw_zb
+  LDA #'-'
+.rw_zb:
+  STA REC_TAB+56,X
+  DEX
+  BPL .rw_z
+.rw_c:
+  LDA REC_STK
+  STA REC_SC
+  STZ REC_SC+1
+  STZ REC_SC+2
+  STZ REC_SC+3
+  STZ REC_PL
+  JSR REC_CHECK
+  LDA #$FF
+  BCC .rw_p
+  LDA REC_POS
+.rw_p:
+  STA REC_RUN
+  JMP REC_SAVE
+
+; ---------------------------------------------------------------
+;  REC_SIGN: the sign screen. UP / DOWN change the letter,
+;  LEFT / RIGHT move, a button moves on (on the third letter it
+;  confirms); after 30 s without a key it confirms by itself.
+; ---------------------------------------------------------------
+REC_SIGN:
+  JSR VDP_INT_OFF
+  JSR HIDE_SPRITES               ; nothing of the game over the table
+  JSR REC_CLS
+  LDX #REC_SROW-4
+  LDY #RT_NEWX
+  LDA #(RT_NEW-REC_TXT)
+  JSR REC_PUTS
+  .ifndef REC_ONEPL
+  LDX #REC_SROW-2
+  LDY #RT_PLX
+  LDA #(RT_PLAYER-REC_TXT)
+  JSR REC_PUTS
+  LDA REC_PL
+  CLC
+  ADC #'1'
+  JSR REC_OUT
+  .endif
+  LDA #REC_SROW
+  STA REC_R0
+  JSR REC_SHOW_R
+  LDX #REC_SROW+10
+  LDY #RT_HX
+  LDA #(RT_H1-REC_TXT)
+  JSR REC_PUTS
+  LDX #REC_SROW+11
+  LDY #RT_HX
+  LDA #(RT_H2-REC_TXT)
+  JSR REC_PUTS
+  LDX #REC_SROW+12
+  LDY #RT_HX
+  LDA #(RT_H3-REC_TXT)
+  JSR REC_PUTS
+  JSR VDP_INT_ON
+  STZ REC_CUR
+  STZ REC_RPT
+  LDA #$FF                     ; everything held: a key counts once released
+  STA REC_JP
+  LDA #<REC_WAITT
+  STA REC_TMO
+  LDA #>REC_WAITT
+  STA REC_TMO+1
+.sg_l:
+  JSR VDP_INT_OFF
+  JSR READ_JOY
+  LDA P_JOY+1
+  AND #REC_JOY2
+  STA REC_T
+  LDX REC_PL
+  LDA P_JOY,X
+  ORA REC_T
+  AND #$3F
+  STA REC_J
+  LDA REC_JP
+  EOR #$FF
+  AND REC_J
+  STA REC_JN
+  LDA REC_J
+  STA REC_JP
+  BEQ .sg_nk
+  LDA #<REC_WAITT              ; a key: the 30 s start again
+  STA REC_TMO
+  LDA #>REC_WAITT
+  STA REC_TMO+1
+.sg_nk:
+  LDA REC_JN                   ; a button or RIGHT: the next letter
+  AND #$38
+  BEQ .sg_nr
+  LDA REC_CUR
+  CMP #2
+  BCC .sg_mr
+  LDA REC_JN
+  AND #$30
+  BEQ .sg_nr
+  JMP .sg_end                  ; a button on the third letter: done
+.sg_mr:
+  INC REC_CUR
+  BRA .sg_snd
+.sg_nr:
+  LDA REC_JN                   ; LEFT: back one letter
+  AND #$04
+  BEQ .sg_ud
+  LDA REC_CUR
+  BEQ .sg_ud
+  DEC REC_CUR
+  BRA .sg_snd
+.sg_ud:
+  LDA REC_JN                   ; UP / DOWN: at once, then repeated
+  AND #$03
+  BEQ .sg_hold
+  LDA #18
+  STA REC_RPT
+  BRA .sg_chg
+.sg_hold:
+  LDA REC_J
+  AND #$03
+  BEQ .sg_draw
+  DEC REC_RPT
+  BNE .sg_draw
+  LDA #5
+  STA REC_RPT
+.sg_chg:
+  JSR REC_LETTER
+.sg_snd:
+  LDA #0
+  JSR REC_SND
+.sg_draw:
+  LDA REC_TMO                  ; the letter being edited blinks
+  AND #$10
+  JSR REC_INITS
+  JSR VDP_INT_ON
+  LDA REC_TMO                  ; 30 s without a key: done
+  BNE .sg_t
+  DEC REC_TMO+1
+  BMI .sg_end
+.sg_t:
+  DEC REC_TMO
+  JMP .sg_l
+.sg_end:
+  JSR VDP_INT_OFF
+  LDA #0
+  JSR REC_INITS
+  JSR VDP_INT_ON
+  LDA #1
+  JSR REC_SND
+  LDA #90                      ; the signed table stays 1.5 s
+  STA REC_T
+.sg_w:
+  JSR VDP_INT_OFF
+  JSR VDP_INT_ON
+  DEC REC_T
+  BNE .sg_w
+  RTS
+
+; the letter REC_CUR of the row REC_POS: UP next, DOWN previous
+REC_LETTER:
+  LDA REC_POS
+  CLC
+  ADC REC_CUR
+  TAX                          ; X = row + letter - 4: REC_TAB+4,X
+  LDY #REC_NLET-1
+.rl_f:
+  LDA REC_LETTERS,Y
+  CMP REC_TAB+4,X
+  BEQ .rl_k
+  DEY
+  BPL .rl_f
+  LDY #REC_NLET-1              ; not a letter ("---"): UP gives A
+.rl_k:
+  LDA REC_JN
+  ORA REC_J
+  AND #$01
+  BEQ .rl_dn
+  INY
+  CPY #REC_NLET
+  BCC .rl_s
+  LDY #0
+  BRA .rl_s
+.rl_dn:
+  DEY
+  BPL .rl_s
+  LDY #REC_NLET-1
+.rl_s:
+  LDA REC_LETTERS,Y
+  STA REC_TAB+4,X
+  RTS
+
+; the initials of the row REC_POS; A <> 0: the letter REC_CUR as "_"
+REC_INITS:
+  STA REC_K
+  LDA REC_POS
+  LSR A
+  LSR A
+  LSR A
+  SEC                          ; row REC_R0 + 1 + place
+  ADC REC_R0
+  TAX
+  LDY #7
+  JSR REC_XY
+  LDX REC_POS
+  STZ REC_T
+.ri_l:
+  LDA REC_TAB+4,X
+  LDY REC_T
+  CPY REC_CUR
+  BNE .ri_p
+  LDY REC_K
+  BEQ .ri_p
+  LDA #'_'
+.ri_p:
+  JSR REC_OUT
+  INX
+  INC REC_T
+  LDA REC_T
+  CMP #3
+  BNE .ri_l
+  RTS
+
+; ---------------------------------------------------------------
+;  title pages
+; ---------------------------------------------------------------
+REC_TITLE:
+  STZ REC_PG
+
+  LDA #<REC_PAGE_T
+  STA REC_PT
+  LDA #>REC_PAGE_T
+  STA REC_PT+1
+  RTS
+
+REC_TICK:
+  LDA REC_PT
+  BNE .tk_d
+  LDA REC_PT+1
+  BEQ .tk_sw
+  DEC REC_PT+1
+.tk_d:
+  DEC REC_PT
+  CLC
+  RTS
+.tk_sw:
+  LDA REC_PG                   ; the other page: the table for 5 s, the game's for 8 s
+  EOR #1
+  STA REC_PG
+  BEQ .tk_g
+  LDA #<REC_TAB_T
+  STA REC_PT
+  LDA #>REC_TAB_T
+  STA REC_PT+1
+  SEC
+  RTS
+.tk_g:
+  JSR REC_TITLE
+  LDA #0
+  STA REC_PG                   ; (REC_TITLE keeps page 0)
+  SEC
+  RTS
+
+; ---------------------------------------------------------------
+;  REC_SHOW: header and 8 rows
+;    " 1. ABC  00123450  LEG 5"  (columns 4, 7, 12, 22)
+; ---------------------------------------------------------------
+REC_SHOW:
+  LDA #REC_ROW
+  STA REC_R0
+REC_SHOW_R:                    ; the table with its header on row REC_R0
+  LDA REC_POS                  ; kept: the row being signed
+  PHA
+  JSR REC_WIPE_R
+  LDX #0                       ; header, centred
+.sh_n:
+  LDA REC_HEAD,X
+  BEQ .sh_c
+  INX
+  BRA .sh_n
+.sh_c:
+  STX REC_T
+  LDA #32
+  SEC
+  SBC REC_T
+  LSR A
+  TAY
+  LDX REC_R0
+  JSR REC_XY
+  LDX #0
+.sh_h:
+  LDA REC_HEAD,X
+  BEQ .sh_r
+  JSR REC_OUT
+  INX
+  BRA .sh_h
+.sh_r:
+  LDA #0
+.sh_l:
+  STA REC_POS
+  JSR REC_LINE
+  LDA REC_POS
+  CLC
+  ADC #8
+  CMP #64
+  BNE .sh_l
+  PLA
+  STA REC_POS
+  RTS
+
+; the row REC_POS
+REC_LINE:
+  LSR A
+  LSR A
+  LSR A
+  STA REC_K
+  SEC                          ; row REC_R0 + 1 + place
+  ADC REC_R0
+  TAX
+  LDY #4
+  JSR REC_XY
+  LDA REC_K                    ; place
+  CLC
+  ADC #'1'
+  JSR REC_OUT
+  LDA #'.'
+  JSR REC_OUT
+  LDA #' '
+  JSR REC_OUT
+  LDX REC_POS
+  LDA REC_TAB+4,X              ; initials
+  JSR REC_OUT
+  LDA REC_TAB+5,X
+  JSR REC_OUT
+  LDA REC_TAB+6,X
+  JSR REC_OUT
+  LDA REC_TAB,X                ; an empty row: no score
+  ORA REC_TAB+1,X
+  ORA REC_TAB+2,X
+  ORA REC_TAB+3,X
+  BEQ .ln_e
+  LDA #' '
+  JSR REC_OUT
+  JSR REC_OUT
+  STZ REC_NZ                   ; score: 8 digits, no leading zeros
+  TXA
+  CLC
+  ADC #3
+  TAY
+  LDA #4
+  STA REC_K
+.ln_b:
+  LDA REC_TAB,Y
+  LSR A
+  LSR A
+  LSR A
+  LSR A
+  JSR REC_DIG
+  LDA REC_K
+  CMP #1
+  BNE .ln_lo
+  STA REC_NZ                   ; the last digit always shows
+.ln_lo:
+  LDA REC_TAB,Y
+  AND #$0F
+  JSR REC_DIG
+  DEY
+  DEC REC_K
+  BNE .ln_b
+  LDX REC_POS                  ; the extra byte with its label
+  LDA REC_TAB+7,X
+  BEQ .ln_e
+  LDA #' '
+  JSR REC_OUT
+  JSR REC_OUT
+  LDX #0
+.ln_x:
+  LDA REC_XLBL,X
+  BEQ .ln_v
+  JSR REC_OUT
+  INX
+  BRA .ln_x
+.ln_v:
+  LDX REC_POS
+  LDA REC_TAB+7,X
+  JMP REC_DEC
+.ln_e:
+  RTS
+
+; A = digit 0-9; a blank while no digit has been printed
+REC_DIG:
+  CMP #0
+  BNE .dg_p
+  LDA REC_NZ
+  BNE .dg_0
+  LDA #' '
+  JMP REC_OUT
+.dg_0:
+  LDA #0
+.dg_p:
+  ORA #'0'
+  JSR REC_OUT
+  LDA #1
+  STA REC_NZ
+  RTS
+
+; A = 0-255 in decimal, no leading zeros
+REC_DEC:
+  STZ REC_NZ
+  LDX #'0'-1
+.dc_h:
+  INX
+  SEC
+  SBC #100
+  BCS .dc_h
+  ADC #100
+  CPX #'0'
+  BEQ .dc_t
+  PHA
+  TXA
+  JSR REC_OUT
+  PLA
+  INC REC_NZ
+.dc_t:
+  LDX #'0'-1
+.dc_t1:
+  INX
+  SEC
+  SBC #10
+  BCS .dc_t1
+  ADC #10
+  LDY REC_NZ
+  BNE .dc_tp
+  CPX #'0'
+  BEQ .dc_u
+.dc_tp:
+  PHA
+  TXA
+  JSR REC_OUT
+  PLA
+.dc_u:
+  ORA #'0'
+  ; fall into REC_OUT
+
+; one character to the VDP. Every write of the table goes through here, so two writes
+; are at least 14 cycles apart: while it draws the screen the TMS9918A needs about 8 us
+; between two accesses, or a character is lost (the emulators do not show it)
+REC_OUT:
+  .ifdef REC_BMP
+  PHA                          ; a bitmap game draws the character in its cell
+  PHX
+  PHY
+  JSR REC_CHR
+  PLY
+  PLX
+  PLA
+  .else
+  STA VDATA
+  .endif
+  RTS
+
+; REC_WIPEN rows from REC_ROW blank (REC_WIPE_R: from REC_R0)
+REC_WIPE:
+  LDA #REC_ROW
+  STA REC_R0
+REC_WIPE_R:
+  .ifdef REC_BMP
+  LDA REC_R0
+  LDX #REC_WIPEN
+  JMP REC_CLRROWS
+  .endif
+  LDA REC_R0
+  STA REC_K
+  CLC
+  ADC #REC_WIPEN
+  STA REC_T
+.wp_r:
+  LDX REC_K
+  LDY #0
+  JSR REC_XY
+  LDX #32
+  LDA #' '
+.wp_c:
+  STA VDATA                    ; 11 cycles per write (see REC_OUT)
+  NOP
+  DEX
+  BNE .wp_c
+  INC REC_K
+  LDA REC_K
+  CMP REC_T
+  BNE .wp_r
+  RTS
+
+; X = row, Y = column, A = offset in REC_TXT: the text up to 0
+REC_PUTS:
+  PHA
+  JSR REC_XY
+  PLX
+.pu_l:
+  LDA REC_TXT,X
+  BEQ .pu_e
+  JSR REC_OUT
+  INX
+  BRA .pu_l
+.pu_e:
+  RTS
+
+REC_TXT:
+  .ifdef REC_ITALIAN
+RT_NEW:    .byte "NUOVO RECORD",0
+RT_PLAYER: .byte "GIOCATORE ",0
+RT_H1:     .byte "SU/GIU'         LETTERA",0
+RT_H2:     .byte "SINISTRA/DESTRA SPOSTA",0
+RT_H3:     .byte "TASTO           AVANTI/OK",0
+RT_NEWX    = 10                ; columns of the texts
+RT_PLX     = 10
+RT_HX      = 4
+  .else
+RT_NEW:    .byte "NEW RECORD",0
+RT_PLAYER: .byte "PLAYER ",0
+RT_H1:     .byte "UP/DOWN    LETTER",0
+RT_H2:     .byte "LEFT/RIGHT MOVE",0
+RT_H3:     .byte "BUTTON     NEXT/OK",0
+RT_NEWX    = 11
+RT_PLX     = 12
+RT_HX      = 7
+  .endif
+; ==== RECORDS LIBRARY END ====

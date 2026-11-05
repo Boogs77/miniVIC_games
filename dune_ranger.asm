@@ -1347,19 +1347,37 @@ SET_COLOURS:
 .sc_a:
   LDA T4
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA T5
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   DEY
   BNE .sc_a
   LDY #64                      ; row 20: all track
 .sc_b:
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   DEY
   BNE .sc_b
   DEX
@@ -4343,6 +4361,9 @@ SFX_BOOM:                       ; A = id (S_SMALL / S_BIG), X = pan
 ;    REC_XY     X = row, Y = column: VDP write address
 ;    REC_CLS    clears the screen for the sign screen
 ;    REC_SND    A = 0 letter changed, 1 initials confirmed
+;  and optionally (defined before the library):
+;    REC_ITALIAN  the texts of the sign screen in Italian
+;    REC_ONEPL    one player only: no "PLAYER n" line
 ;  and has VDATA, P_JOY (2 bytes, 1 = pressed, bits UDLR B1 B2),
 ;  READ_JOY, HIDE_SPRITES, VINT, VDP_INT_OFF (waits for the next frame and
 ;  stops the NMI) and VDP_INT_ON.
@@ -4773,30 +4794,32 @@ REC_SIGN:
   JSR HIDE_SPRITES               ; nothing of the game over the table
   JSR REC_CLS
   LDX #REC_SROW-4
-  LDY #11
+  LDY #RT_NEWX
   LDA #(RT_NEW-REC_TXT)
   JSR REC_PUTS
+  .ifndef REC_ONEPL
   LDX #REC_SROW-2
-  LDY #12
+  LDY #RT_PLX
   LDA #(RT_PLAYER-REC_TXT)
   JSR REC_PUTS
   LDA REC_PL
   CLC
   ADC #'1'
   STA VDATA
+  .endif
   LDA #REC_SROW
   STA REC_R0
   JSR REC_SHOW_R
   LDX #REC_SROW+10
-  LDY #7
+  LDY #RT_HX
   LDA #(RT_H1-REC_TXT)
   JSR REC_PUTS
   LDX #REC_SROW+11
-  LDY #7
+  LDY #RT_HX
   LDA #(RT_H2-REC_TXT)
   JSR REC_PUTS
   LDX #REC_SROW+12
-  LDY #7
+  LDY #RT_HX
   LDA #(RT_H3-REC_TXT)
   JSR REC_PUTS
   JSR VDP_INT_ON
@@ -5234,11 +5257,25 @@ REC_PUTS:
   RTS
 
 REC_TXT:
+  .ifdef REC_ITALIAN
+RT_NEW:    .byte "NUOVO RECORD",0
+RT_PLAYER: .byte "GIOCATORE ",0
+RT_H1:     .byte "SU/GIU'         LETTERA",0
+RT_H2:     .byte "SINISTRA/DESTRA SPOSTA",0
+RT_H3:     .byte "TASTO           AVANTI/OK",0
+RT_NEWX    = 10                ; columns of the texts
+RT_PLX     = 10
+RT_HX      = 4
+  .else
 RT_NEW:    .byte "NEW RECORD",0
 RT_PLAYER: .byte "PLAYER ",0
 RT_H1:     .byte "UP/DOWN    LETTER",0
 RT_H2:     .byte "LEFT/RIGHT MOVE",0
 RT_H3:     .byte "BUTTON     NEXT/OK",0
+RT_NEWX    = 11
+RT_PLX     = 12
+RT_HX      = 7
+  .endif
 ; ===============================================================
 ;  TABLES
 ; ===============================================================

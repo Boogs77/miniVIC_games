@@ -1076,17 +1076,27 @@ DRAW_STATUS:
   LDA #T_LIFE
 .ds_b:
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   INX
   CPX #4
   BNE .ds_l
   LDA #$20
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA #T_CHG
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA CHARGES
   ORA #$30
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDX #1
   LDY #19
   JSR NT_XY
@@ -1095,6 +1105,8 @@ DRAW_STATUS:
   LDA TXT_SEC,Y
   BEQ .ds_se
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   INY
   BRA .ds_s
 .ds_se:
@@ -1110,6 +1122,8 @@ DRAW_STATUS:
   LDA TXT_COL,Y
   BEQ .ds_ce
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   INY
   BRA .ds_c
 .ds_ce:
@@ -1118,10 +1132,16 @@ DRAW_STATUS:
   JSR PUT_2
   LDA #'/'
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA #'2'
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA #'0'
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   RTS
 
 UPDATE_HUD:

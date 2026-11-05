@@ -258,7 +258,7 @@ BTN_MASK    = %00110000
 REC_ZONE    = 15           ; fixed zone of the game in the save area
 REC_RAM     = $7C00        ; $2A0 bytes of free RAM
 REC_ROW     = 6            ; page 2 of the title: header on row 6, the table on rows 7-14
-REC_WIPEN   = 9            ; rows 6-14
+REC_WIPEN   = 15           ; rows 6-20 (the scoring table of the title)
 REC_JOY2    = $FF          ; both joysticks sign
 REC_SROW    = 9            ; sign screen: below the scanner
 HIDE_Y      = $C0
@@ -326,6 +326,7 @@ TITLE:
   STA SND_CMD
   JSR VDP_INT_OFF
   JSR CLEAR_FIELD
+  JSR FONT_LOW                 ; the title uses the whole screen
   STZ NPL                      ; (no player label in the HUD)
   JSR DRAW_HUD
   LDA #<TXT_TITLE
@@ -379,6 +380,9 @@ TITLE:
 ;  NEW GAME: wave 1, 3 ships, 3 smart bombs for every player
 ; ===============================================================
 NEW_GAME:
+  JSR VDP_INT_OFF              ; the mountains back in the third 2 (the title put the font there)
+  JSR LOAD_GFX
+  JSR VDP_INT_ON
   LDA #CMD_GAME
   STA SND_CMD
   LDA NPL
@@ -951,6 +955,9 @@ REC_XY = NT_XY
 REC_CLS:                       ; the sign screen: the field empty, the HUD on top
   JSR HIDE_SPRITES
   JSR CLEAR_FIELD
+  JSR FONT_LOW
+  JMP DRAW_HUD
+FONT_LOW:
   STZ T0                       ; the font in the third 2 too (tiles 32-95, white):
   LDA #$51                     ; there the mountains use those tiles, LOAD_GFX puts them back
   STA T1
@@ -969,8 +976,7 @@ REC_CLS:                       ; the sign screen: the field empty, the HUD on to
   LDA #2
   STA T3
   LDA #$F0
-  JSR VFILL
-  JMP DRAW_HUD
+  JMP VFILL
 REC_SND:                       ; A = 0 a letter, 1 the initials confirmed
   PHX
   LDX #2
@@ -3456,6 +3462,8 @@ CLEAR_FIELD:
   INY
 .cf_w:
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   INX
   CPX #32
   BNE .cf_r
@@ -3466,20 +3474,30 @@ CLEAR_FIELD:
   LDA #HLINE_T
 .cf_l:
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   DEX
   BNE .cf_l
   LDX #$00                     ; rows 4-23: empty (640 bytes)
   LDA #0
 .cf_e:
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   INX
   CPX #160
   BNE .cf_e
   LDX #160
 .cf_e2:
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   DEX
   BNE .cf_e2
   RTS
@@ -3682,10 +3700,14 @@ DRAW_SCORE:
   LSR A
   ORA #$30
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   PLA
   AND #$0F
   ORA #$30
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   RTS
 
 ; the message in the middle goes away; the white flash of a smart bomb
@@ -3701,7 +3723,11 @@ UPDATE_MSG:
   LDA #0
 .um_c:
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   DEX
   BNE .um_c
 .um_f:
@@ -4417,14 +4443,18 @@ TITLE_PAGE:
   LDA #>TXT_TITLE
   STA TP+1
   JSR PRINT
-  LDX #6                       ; clear rows 6-13
+  LDX #6                       ; clear rows 6-20
   LDY #0
   JSR NT_XY
-  LDX #128
+  LDX #240
   LDA #0
 .tp_c:
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   DEX
   BNE .tp_c
   LDX TPAGE
@@ -4445,6 +4475,7 @@ TITLE_PAGE:
   ASL A
   ASL A
   ASL A
+  ASL A                        ; a line every 2 rows
   CLC
   ADC #(6*8-5)
   STA SAT_BUFFER,Y
@@ -5952,29 +5983,29 @@ TXT_HUD:
   .byte $FF
 TXT_TITLE:
   .byte 4,8,"S T A R G A T E",0
-  .byte 5,3,"DEVELOPED BY BOOGS & CCAI",0
-  .byte 14,1,"B1 FIRE B2 BOMB  HOLD B2 INVISO",0
-  .byte 15,1,"B1+B2 HYPER   B1=1 PL  B2=2 PL",0
+  .byte 21,1,"B1 FIRE B2 BOMB  HOLD B2 INVISO",0
+  .byte 22,1,"B1+B2 HYPER   B1=1 PL  B2=2 PL",0
+  .byte 23,3,"DEVELOPED BY BOOGS & CCAI",0
   .byte $FF
 TXT_PAGE1:
   .byte 6,11,"LANDER       150",0
-  .byte 7,11,"MUTANT       150",0
-  .byte 8,11,"BOMBER       250",0
-  .byte 9,11,"POD         1000",0
-  .byte 10,11,"SWARMER      150",0
-  .byte 11,11,"BAITER       200",0
-  .byte 12,11,"FIREBOMBER   250",0
-  .byte 13,11,"FIREBALL     100",0
+  .byte 8,11,"MUTANT       150",0
+  .byte 10,11,"BOMBER       250",0
+  .byte 12,11,"POD         1000",0
+  .byte 14,11,"SWARMER      150",0
+  .byte 16,11,"BAITER       200",0
+  .byte 18,11,"FIREBOMBER   250",0
+  .byte 20,11,"FIREBALL     100",0
   .byte $FF
 TXT_PAGE2:
   .byte 6,11,"YLLABIAN     200",0
-  .byte 7,11,"DYNAMO       200",0
-  .byte 8,11,"SPACE HUM    100",0
-  .byte 9,11,"PHRED        200",0
-  .byte 10,11,"BIG RED      200",0
-  .byte 11,11,"MUNCHIE       50",0
-  .byte 12,11,"HUMANOID     500",0
-  .byte 13,11,"STARGATE",0
+  .byte 8,11,"DYNAMO       200",0
+  .byte 10,11,"SPACE HUM    100",0
+  .byte 12,11,"PHRED        200",0
+  .byte 14,11,"BIG RED      200",0
+  .byte 16,11,"MUNCHIE       50",0
+  .byte 18,11,"HUMANOID     500",0
+  .byte 20,11,"STARGATE",0
   .byte $FF
 TXT_PLAYER:
   .byte 7,11,"PLAYER ",0

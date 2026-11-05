@@ -64,6 +64,7 @@ TIMEL       = $50      ;                  tens and units
 TSUB        = $51      ; frames into the second
 WX          = $52      ; first column of the camp on the screen
 SCPH        = $53      ; scroll: 0 idle, 1-3 band being built
+SUBX        = REC_RAM+$29F ; steps of the commando past the middle: the world moves every 8
 HOFF        = $54      ; name table of NT_XY and CLEAR_NT (0 / 4)
 VIS         = $55      ; name table shown (0 = $3800, 4 = $3C00)
 WEAP        = $56      ; special weapon: 0 none, 1 machine gun, 2 mortar, 3 timed charge
@@ -972,12 +973,18 @@ DRAW_BOTTOM:
   JSR NT_XY
   LDA #'S'
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA SECTOR
   CLC
   ADC #$31
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA #$20
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDX CURP                     ; spare lives (at most 4)
   LDA LIVES,X
   BEQ .db_z
@@ -992,16 +999,24 @@ DRAW_BOTTOM:
   LDA #T_LIFE
 .db_b:
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   INX
   CPX #4
   BNE .db_l
   LDA #$20
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA WEAP                     ; weapon icon and shots
   CLC
   ADC #T_KNIFE
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA WEAP
   BEQ .db_nw
   LDA AMMO
@@ -1011,6 +1026,8 @@ DRAW_BOTTOM:
   LDA #$20
 .db_w:
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDX #23
   LDY #21
   JSR NT_XY
@@ -1023,12 +1040,16 @@ DRAW_BOTTOM:
   LDA (TP),Y
   BEQ .db_te
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   INY
   BRA .db_t
 .db_te:
   LDA TIMEH
   ORA #$30
   STA VDATA
+  NOP                          ; 8 cycles between two VDP writes
+  NOP
   LDA TIMEL
   JMP PUT_2
 
@@ -1279,6 +1300,7 @@ START_SECTOR:
   JSR SET_BACKDROP
   LDA CHECKP
   STA WX
+  STZ SUBX
   LDX SECTOR                   ; skip the spawns before the view and in its first 24 columns
   LDA SPN_LO,X
   STA SPNP
@@ -1502,12 +1524,16 @@ SET_R2:                        ; R2 = name table VIS ($0E = $3800, $0F = $3C00)
 SCROLL:
   LDA SCPH
   BNE .sc_b
-  LDA O_X
-  CMP #128
+  LDA SUBX                     ; 8 steps past the middle: one column
+  CMP #8
   BCC .sc_r
   LDA WX
   CMP #WXMAX
   BCS .sc_r
+  LDA SUBX
+  SEC
+  SBC #8
+  STA SUBX
   LDA #1
   STA SCPH
   LDA WX
@@ -1528,8 +1554,10 @@ SCROLL:
   INC WX
   LDA #1
   STA FLIPP
-  LDX #NOB-1                   ; everything 8 pixels to the left; gone past the left edge
+  LDX #NOB-1                   ; everything but the commando 8 pixels to the left; gone past the left edge
 .sc_o:
+  CPX #0
+  BEQ .sc_n
   LDA O_K,X
   BEQ .sc_n
   LDA O_X,X
@@ -1892,6 +1920,11 @@ HERO_WALK:
   BEQ .hw_r
   LDA #1
   STA O_D
+  LDA SUBX                     ; steps not yet scrolled: back on them first
+  BEQ .hw_l
+  DEC SUBX
+  BRA .hw_a
+.hw_l:
   LDA O_X
   CMP #9
   BCC .hw_a
@@ -1902,6 +1935,15 @@ HERO_WALK:
   AND #8
   BEQ .hw_n
   STZ O_D
+  LDA O_X                      ; past the middle the commando stays there and the world
+  CMP #128                     ; moves (8 steps = one column): he does not jump back
+  BCC .hw_m
+  LDA WX
+  CMP #WXMAX
+  BCS .hw_m
+  INC SUBX
+  BRA .hw_a
+.hw_m:
   LDA O_X
   CMP #244
   BCS .hw_a

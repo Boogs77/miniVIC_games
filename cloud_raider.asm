@@ -1355,7 +1355,7 @@ CELL:
   LDA (PTR),Y
   RTS
 
-; row DA - 1 is finished now that row DA is there: a face under the walls,
+; row DA - 1 is finished now that row DA is there: a face under the walls (two under the high ones),
 ; the rock under the edges of the islands (the cell above (a, b) on the screen is (a + 1, b - 1))
 FINISH_ROW:
   LDA DA
@@ -1409,6 +1409,34 @@ FINISH_ROW:
   INY
   CPY #64
   BCC .fr_l
+  ; ---- the high walls look twice as tall: a second face under the face (row a - 1, b + 1);
+  ; the walls still stop the ship only on their own cells
+  LDA PTR                      ; PTR2 = row a
+  STA PTR2
+  LDA PTR+1
+  STA PTR2+1
+  LDA DA
+  SEC
+  SBC #2
+  JSR MAP_ROW                  ; PTR = row a - 1
+  LDY #1
+.fr_2:
+  LDA (PTR2),Y
+  CMP #T_HIGH_FACE
+  BNE .fr_2n
+  INY
+  LDA (PTR),Y
+  DEY
+  CMP #T_FLOOR
+  BNE .fr_2n
+  INY
+  LDA #T_HIGH_FACE
+  STA (PTR),Y
+  DEY
+.fr_2n:
+  INY
+  CPY #63
+  BCC .fr_2
   RTS
 
 LO6: .byte 0,64,128,192,0,64,128,192,0,64,128,192,0,64,128,192

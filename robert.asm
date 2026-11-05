@@ -1104,9 +1104,9 @@ BELOW:
   TAX
   JSR NT_XY
   LDA T2
-  STA VDATA
+  JSR VOUT
   INC A
-  STA VDATA
+  JSR VOUT
   RTS
 
 ; X = cube: its 8 tiles in the state of the cube (keeps nothing)
@@ -1150,27 +1150,27 @@ DRAW_CUBE:
   JSR NT_XY
   LDA T2
   ORA T3
-  STA VDATA
+  JSR VOUT
   INC A
-  STA VDATA
+  JSR VOUT
   LDA T2
   ORA T5
-  STA VDATA
+  JSR VOUT
   INC A
-  STA VDATA
+  JSR VOUT
   LDX T0
   INX
   LDY T1
   JSR NT_XY
   LDA T2
   ORA #8
-  STA VDATA
+  JSR VOUT
   INC A
-  STA VDATA
+  JSR VOUT
   INC A
-  STA VDATA
+  JSR VOUT
   INC A
-  STA VDATA
+  JSR VOUT
   RTS
 
 ; a loose cube (no neighbours) at tile row T0, column T1, state A
@@ -1186,40 +1186,40 @@ LOOSE_CUBE:
   JSR NT_XY
   LDA T2
   ORA #2
-  STA VDATA
+  JSR VOUT
   INC A
-  STA VDATA
+  JSR VOUT
   LDA T2
   ORA #6
-  STA VDATA
+  JSR VOUT
   INC A
-  STA VDATA
+  JSR VOUT
   LDX T0
   INX
   LDY T1
   JSR NT_XY
   LDA T2
   ORA #8
-  STA VDATA
+  JSR VOUT
   INC A
-  STA VDATA
+  JSR VOUT
   INC A
-  STA VDATA
+  JSR VOUT
   INC A
-  STA VDATA
+  JSR VOUT
   LDX T0
   INX
   INX
   LDY T1
   JSR NT_XY
   LDA #192
-  STA VDATA
+  JSR VOUT
   INC A
-  STA VDATA
+  JSR VOUT
   INC A
-  STA VDATA
+  JSR VOUT
   INC A
-  STA VDATA
+  JSR VOUT
   RTS
 
 ; the goal colour, up left
@@ -1387,10 +1387,10 @@ DRAW_BVALS:
   LDY #7
   JSR PUT_BCD2
   LDA #'-'
-  STA VDATA
+  JSR VOUT
   LDA ROUND
   ORA #$30
-  STA VDATA
+  JSR VOUT
   LDX #23
   LDY #13
   JSR NT_XY
@@ -1407,9 +1407,9 @@ DRAW_BVALS:
   BCS .db_b
   LDA #T_LIFE
 .db_b:
-  STA VDATA
+  JSR VOUT
   LDA #$20
-  STA VDATA
+  JSR VOUT
   INX
   CPX #6
   BNE .db_l
@@ -1424,7 +1424,7 @@ DRAW_BVALS:
   LDY #5
 .db_jl:
   LDA TXT_JUMP,X
-  STA VDATA
+  JSR VOUT
   INX
   DEY
   BNE .db_jl
@@ -3786,6 +3786,9 @@ SFX_BOOM:                       ; A = id (S_SMALL / S_BIG), X = pan
 ;    REC_XY     X = row, Y = column: VDP write address
 ;    REC_CLS    clears the screen for the sign screen
 ;    REC_SND    A = 0 letter changed, 1 initials confirmed
+;  and optionally (defined before the library):
+;    REC_ITALIAN  the texts of the sign screen in Italian
+;    REC_ONEPL    one player only: no "PLAYER n" line
 ;  and has VDATA, P_JOY (2 bytes, 1 = pressed, bits UDLR B1 B2),
 ;  READ_JOY, HIDE_SPRITES, VINT, VDP_INT_OFF (waits for the next frame and
 ;  stops the NMI) and VDP_INT_ON.
@@ -4216,30 +4219,32 @@ REC_SIGN:
   JSR HIDE_SPRITES               ; nothing of the game over the table
   JSR REC_CLS
   LDX #REC_SROW-4
-  LDY #11
+  LDY #RT_NEWX
   LDA #(RT_NEW-REC_TXT)
   JSR REC_PUTS
+  .ifndef REC_ONEPL
   LDX #REC_SROW-2
-  LDY #12
+  LDY #RT_PLX
   LDA #(RT_PLAYER-REC_TXT)
   JSR REC_PUTS
   LDA REC_PL
   CLC
   ADC #'1'
   STA VDATA
+  .endif
   LDA #REC_SROW
   STA REC_R0
   JSR REC_SHOW_R
   LDX #REC_SROW+10
-  LDY #7
+  LDY #RT_HX
   LDA #(RT_H1-REC_TXT)
   JSR REC_PUTS
   LDX #REC_SROW+11
-  LDY #7
+  LDY #RT_HX
   LDA #(RT_H2-REC_TXT)
   JSR REC_PUTS
   LDX #REC_SROW+12
-  LDY #7
+  LDY #RT_HX
   LDA #(RT_H3-REC_TXT)
   JSR REC_PUTS
   JSR VDP_INT_ON
@@ -4677,11 +4682,25 @@ REC_PUTS:
   RTS
 
 REC_TXT:
+  .ifdef REC_ITALIAN
+RT_NEW:    .byte "NUOVO RECORD",0
+RT_PLAYER: .byte "GIOCATORE ",0
+RT_H1:     .byte "SU/GIU'         LETTERA",0
+RT_H2:     .byte "SINISTRA/DESTRA SPOSTA",0
+RT_H3:     .byte "TASTO           AVANTI/OK",0
+RT_NEWX    = 10                ; columns of the texts
+RT_PLX     = 10
+RT_HX      = 4
+  .else
 RT_NEW:    .byte "NEW RECORD",0
 RT_PLAYER: .byte "PLAYER ",0
 RT_H1:     .byte "UP/DOWN    LETTER",0
 RT_H2:     .byte "LEFT/RIGHT MOVE",0
 RT_H3:     .byte "BUTTON     NEXT/OK",0
+RT_NEWX    = 11
+RT_PLX     = 12
+RT_HX      = 7
+  .endif
 
 ; ===============================================================
 ;  TABLES
@@ -5261,3 +5280,9 @@ S_RUMBLE = 2
 S_SPLAT = 3
 S_BIG = S_GLOP
 S_SMALL = S_SPLAT
+
+; one byte to the VDP: a JSR here keeps two writes at least 14 cycles apart
+; (the TMS9918A needs about 8 us between two accesses while it draws the screen)
+VOUT:
+  STA VDATA
+  RTS
