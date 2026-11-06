@@ -1662,7 +1662,7 @@ FILL_TABLE:
 ; every frame: up to 6 rows of the hidden table (the view VT + 1),
 ; one stage of the next map row, then the 2-pixel step; every 4
 ; steps the hidden table is shown and the objects that come into
-; view start. LIGHT = 1: no map stage in this frame (the HUD may go)
+; view start. LIGHT = 1: no map stage or the light one (the HUD may go)
 ; ---------------------------------------------------------------
 SCROLL:
   STZ GSTEP
@@ -1717,6 +1717,7 @@ SCROLL:
   BRA .sc_st
 .sc_4:
   STZ NRSTG
+  INC LIGHT                    ; the names: the lightest stage, the HUD may go too
   JSR NR_C
 .sc_st:
   DEC SCNT
