@@ -39,6 +39,7 @@ A collection of arcade games written in **65C02 assembly** for the **Boogs77-min
 | `deep_space_miner.asm` | **Deep Space Miner** | 1–2 | An original space mining shooter in a sector of 8 × 8 screens that wraps round, with a radar at the top. Fly the drill ship with inertia, shoot the rocks to break crystals out of them and pick them up: every crystal is a seismic charge. Drones steal the crystals and carry them to the Colossus, a giant mechanical spider built piece by piece; with all 20 pieces it wakes up and hunts you, while fighters keep close and shoot. Drop charges near it: they find it by themselves and knock its pieces off one by one. Players take turns. |
 | `dune_ranger.asm` | **Dune Ranger** | 1–2 | An original side-scrolling rover game on a red desert planet. Drive from outpost to outpost while the mesas, the dunes and the track scroll at different speeds: RIGHT goes faster, LEFT slower. Jump the craters, shoot the rocks ahead and the drones overhead (one button fires forward and up together), watch out for spring mines, sand worms rising out of the track and sandstorms chasing you from behind. Eight legs by day with a time bonus at every outpost, then the night run. Players take turns. |
 | `sky_tug.asm` | **Sky Tug** | 1–2 | An original vertical-scrolling shooter: a space tug flies over a planet of islands, a sunken city, a crystal forest and an enemy base while the ground scrolls smoothly 2 pixels at a time. Air waves (fighters in V, spiralling hawks, hovering drones, bombers) and ground targets (tanks, turrets, boats, missile launchers) attack. Shoot the depots open to find the four numbered modules of the tug and dock them: each one adds a gun (front, left, right, rear), a hit costs the last one. Button 2 sends 2–3 modules into a firing formation around the tug, with all four it becomes the full ship for 15 seconds. A flying fortress with two cannons guards the end of every area; checkpoints along the way. Players take turns. |
+| `super_carlo.asm` | **Super Carlo** | 1–2 | An original single-screen platform game in a shipyard where a cruise ship is being built. Carlo the welder (and his mate Fabio, two players at the same time) clears the decks of rats, riveter robots and gulls that come in through the hatches: jump under a steel deck to bump it and turn over whoever walks on it, then kick them into the sea before they get up again, faster. Riveters take two bumps, gulls can only be bumped when they land, welding sparks bounce around, bolts fall from the crane and oil slicks make the decks slippery. The ship siren turns everybody over (three uses). Six decks and two bonus rounds with the launch bottles, then the ship is launched and a faster one begins. |
 
 Each source file starts with a header describing controls, rules and technical notes.
 
@@ -283,6 +284,12 @@ Captured with the miniVIC emulator in [`tools`](tools): title screen and gamepla
 <p align="center">
   <img src="screenshots/sky_tug_title.png" width="45%" />
   <img src="screenshots/sky_tug_game.png" width="45%" />
+</p>
+
+### Super Carlo
+<p align="center">
+  <img src="screenshots/super_carlo_title.png" width="45%" />
+  <img src="screenshots/super_carlo_game.png" width="45%" />
 </p>
 
 ---
