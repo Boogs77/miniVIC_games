@@ -23,5 +23,6 @@
   "special_forces":  [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 420], ["press", "p1", "right", 110], ["press", "p1", "fire", 2], ["wait", 4], ["shot", "game"]],
   "core_runner":     [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 470], ["press", "p1", "up+fire", 12], ["press", "p1", "fire", 8], ["shot", "game"]],
   "deep_space_miner": [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 420], ["play", 300], ["press", "p1", "fire", 2], ["shot", "game"]],
-  "dune_ranger":     [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 230], ["press", "p1", "fire2", 330], ["press", "p1", "fire+fire2", 3], ["press", "p1", "fire2", 12], ["shot", "game"]]
+  "dune_ranger":     [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 230], ["press", "p1", "fire2", 330], ["press", "p1", "fire+fire2", 3], ["press", "p1", "fire2", 12], ["shot", "game"]],
+  "sky_tug":         [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 400], ["press", "p1", "fire+left", 40], ["press", "p1", "fire", 420], ["shot", "game"]]
 }
