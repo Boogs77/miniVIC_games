@@ -27,5 +27,6 @@
   "sky_tug":         [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 120], ["press", "p1", "fire+left", 30], ["press", "p1", "fire", 250], ["shot", "game"]],
   "super_carlo":     [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 460], ["press", "p1", "right", 70], ["press", "p1", "right+fire", 3], ["wait", 14], ["shot", "game"]],
   "ghost_ghust":     [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 380], ["press", "p1", "right", 40], ["press", "p1", "fire", 3], ["wait", 30], ["press", "p1", "fire2", 3], ["wait", 20], ["shot", "game"]],
-  "wormer":          [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 200], ["press", "p1", "up", 30], ["wait", 40], ["shot", "game"]]
+  "wormer":          [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 200], ["press", "p1", "up", 30], ["wait", 40], ["shot", "game"]],
+  "sky_squirrel":    [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 300], ["press", "p1", "right", 20], ["press", "p1", "right+fire", 20], ["wait", 8], ["shot", "game"]]
 }
