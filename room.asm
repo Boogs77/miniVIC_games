@@ -80,6 +80,8 @@ PRESS       = $74      ;   pressed now
 OI          = $75      ; foe being handled
 HITW        = $76      ; frames the foe in view is white (hit)
 HUDW        = $77      ; UPDATE_HUD: the bits still to draw
+MAPON       = $78      ; 1 = the map is shown (the game waits)
+KEEPMAP     = $79      ; 1 = the level again after a life lost: the map stays
 P_JOY       = $80      ; 2 bytes (joystick, 1 = pressed)
 PTS_L       = $82      ; points to add (BCD)
 PTS_M       = $83
@@ -139,6 +141,9 @@ F_ST       = $023C       ; 0 alive, else frames of its puff left
 SAT_BUFFER = $0600
 VBUF       = $0900       ; the view, 24 x 16
 MAZE_RAM   = $0C00       ; the maze of the level
+SEENM      = $0D00       ; 1 = the cell is known (the map)
+CELLX      = $0E00       ; the 15 cells looked at: column, row
+CELLY      = $0E10
 
 ; ---------------- parameters ----------------
 BTN_MASK    = %00110000
@@ -297,6 +302,7 @@ TITLE_FRAME:
 ;  A NEW GAME, A LEVEL
 ; ===============================================================
 NEW_GAME:
+  STZ KEEPMAP
   STZ SCL
   STZ SCM
   STZ SCH
@@ -361,6 +367,31 @@ GAME_LOOP:
   EOR JOYP
   AND JOYC
   STA PRESS
+  LDA GSTATE
+  BNE .gl_nm
+  LDA JOYC                     ; button 2 + DOWN held: the map, the game waits
+  AND #$22
+  CMP #$22
+  BNE .gl_nm
+  LDA MAPON
+  BNE .gl_mh
+  INC MAPON
+  JSR HIDE_SPRITES
+  JSR DRAW_MAP
+  JSR VDP_INT_ON
+  JSR VDP_INT_OFF
+  JSR VIEW_COPY
+.gl_mh:
+  JMP WEND
+.gl_nm:
+  LDA MAPON                    ; the map let go: the view again
+  BEQ .gl_go
+  STZ MAPON
+  LDA #1
+  STA REDRAW
+  LDA #STEP_T
+  STA MOVET
+.gl_go:
   LDA GSTATE
   BNE .gl_ns
   JSR PLAYER
@@ -485,6 +516,8 @@ LIFE_LOST:
   LDA #100
   STA HEALTH
   STZ KEYS
+  LDA #1                       ; the map of the level stays
+  STA KEEPMAP
   JMP LEVEL_START
 
 GAME_OVER:
@@ -914,6 +947,16 @@ ADD_SCORE:
 ;  THE LEVEL: the maze into RAM, the foes, the start
 ; ===============================================================
 LOAD_LEVEL:
+  LDA KEEPMAP                  ; a new level: nothing known
+  BNE .ll_k
+  LDX #0
+.ll_z:
+  STZ SEENM,X
+  INX
+  BNE .ll_z
+.ll_k:
+  STZ KEEPMAP
+  STZ MAPON
   LDX LEVEL
   LDA LV_LO,X
   STA PTR
@@ -1935,6 +1978,10 @@ LOOK:
   LDY T2
   LDX LOOK3,Y
   STA CELLV,X
+  LDA T3
+  STA CELLX,X
+  LDA T4
+  STA CELLY,X
   LDA T0
   STA T3
   LDA T1
@@ -1943,6 +1990,10 @@ LOOK:
   LDY T2
   LDX LOOK3,Y
   STA CELLV+1,X
+  LDA T3
+  STA CELLX+1,X
+  LDA T4
+  STA CELLY+1,X
   LDA DIR                      ; right: the direction + 1
   INC A
   AND #3
@@ -1959,10 +2010,16 @@ LOOK:
   LDY T2
   LDX LOOK3,Y
   STA CELLV+2,X
+  LDA T3
+  STA CELLX+2,X
+  LDA T4
+  STA CELLY+2,X
   LDY T2
   INY
   CPY #5
-  BNE .lk_d
+  BEQ .lk_x
+  JMP .lk_d
+.lk_x:
   RTS
 
 ; T3 / T4 = column / row: A = the cell of the maze (outside = a wall)
@@ -2022,6 +2079,7 @@ RENDER:
   BNE .rn_fs
 .rn_fe:
   STY FS
+  JSR MARK_SEEN
   LDA #3                       ; depth 3 to 0, open cells only
   STA DEP
 .rn_d:
@@ -2103,6 +2161,110 @@ RENDER:
 .rn_x:
   RTS
 
+; the cells the view shows become known on the map: the middle line up to its wall, the sides
+MARK_SEEN:
+  LDY #0
+.mk_d:
+  STY T2
+  LDX LOOK3,Y
+  JSR MARK_X
+  LDY T2
+  LDX LOOK3,Y
+  INX
+  JSR MARK_X
+  LDY T2
+  LDX LOOK3,Y
+  INX
+  INX
+  JSR MARK_X
+  LDY T2
+  CPY FS
+  BCS .mk_r
+  INY
+  CPY #5
+  BNE .mk_d
+.mk_r:
+  RTS
+
+; X = one of the 15 cells looked at: known (if inside the maze)
+MARK_X:
+  LDA CELLX,X
+  CMP #16
+  BCS .mx_r
+  LDA CELLY,X
+  CMP #16
+  BCS .mx_r
+  ASL A
+  ASL A
+  ASL A
+  ASL A
+  ORA CELLX,X
+  TAY
+  LDA #1
+  STA SEENM,Y
+.mx_r:
+  RTS
+
+; the map of the known cells into VBUF (16 x 16 in the middle of the view), the player's arrow
+DRAW_MAP:
+  LDX #0
+.dm_r:
+  LDA VROW_LO,X
+  STA PTR2
+  LDA VROW_HI,X
+  STA PTR2+1
+  LDA #$20
+  LDY #23
+.dm_s:
+  STA (PTR2),Y
+  DEY
+  BPL .dm_s
+  TXA
+  ASL A
+  ASL A
+  ASL A
+  ASL A
+  STA T0                       ; the first cell of the row
+  LDY #4
+.dm_c:
+  TYA
+  SEC
+  SBC #4
+  ORA T0
+  PHY
+  TAY
+  LDA SEENM,Y
+  BEQ .dm_u
+  LDA MAZE_RAM,Y
+  TAY
+  LDA MAPT,Y
+  BRA .dm_p
+.dm_u:
+  LDA #$20
+.dm_p:
+  PLY
+  STA (PTR2),Y
+  INY
+  CPY #20
+  BNE .dm_c
+  INX
+  CPX #16
+  BNE .dm_r
+  LDX PCY                      ; the player
+  LDA VROW_LO,X
+  STA PTR2
+  LDA VROW_HI,X
+  STA PTR2+1
+  LDA PCX
+  CLC
+  ADC #4
+  TAY
+  LDA DIR
+  CLC
+  ADC #MT_PN
+  STA (PTR2),Y
+  RTS
+
 ; A / X = a stamp: its runs into VBUF
 STAMP:
   STA PTR
@@ -2172,6 +2334,9 @@ VIEW_COPY:
   BNE .vc_r
   RTS
 
+; the map: the tile of every kind of cell (0-12)
+MAPT:       .byte MT_FLOOR,MT_WALL,MT_DOORR,MT_DOORB,MT_DOORY,MT_LIFT,MT_FLOOR,MT_FLOOR
+            .byte MT_CARDR,MT_CARDB,MT_CARDY,MT_FLOOR,MT_FLOOR
 ; the four directions: north, east, south, west
 DXT:        .byte 0,1,0,$FF
 DYT:        .byte $FF,0,1,0
@@ -4135,7 +4300,7 @@ TXT_TITLE:
   .byte 9,1,"UP DOWN STEP, LEFT RIGHT TURN",0
   .byte 10,1,"BUTTON 1 = FIRE",0
   .byte 11,1,"BUTTON 2 + LEFT RIGHT = ASIDE",0
-  .byte 12,1,"BUTTON 2 + UP = NEXT WEAPON",0
+  .byte 12,1,"BUTTON 2 + UP WEAPON, DOWN MAP",0
   .byte 15,3,"GUARD",0
   .byte 15,13,"SPIDER",0
   .byte 15,23,"DRONE",0
@@ -4304,7 +4469,7 @@ VTILE_BYTES = 664
 VBG:
   .byte $B1,$B1,$B1,$B1,$B1,$B1,$B1,$B1,$B2,$76,$76,$76,$76,$76,$76,$76
 
-; HUD tiles 179-186
+; HUD tiles 179-199
 T_FRAME = 179
 T_BARF = 180
 T_BARH = 181
@@ -4313,12 +4478,33 @@ T_KEYR = 183
 T_KEYB = 184
 T_KEYY = 185
 T_NOKEY = 186
+MT_WALL = 187
+MT_FLOOR = 188
+MT_DOORR = 189
+MT_DOORB = 190
+MT_DOORY = 191
+MT_LIFT = 192
+MT_CARDR = 193
+MT_CARDB = 194
+MT_CARDY = 195
+MT_PN = 196
+MT_PE = 197
+MT_PS = 198
+MT_PW = 199
 HTILEP:
   .byte $FF,$81,$A5,$81,$81,$A5,$81,$FF,$00,$FE,$FE,$FE,$FE,$FE,$FE,$00,$00,$E0,$E0,$E0,$E0,$E0,$E0,$00,$00,$AA,$00,$AA,$00,$AA,$00,$00
   .byte $00,$7E,$42,$7E,$7E,$66,$7E,$00,$00,$7E,$42,$7E,$7E,$66,$7E,$00,$00,$7E,$42,$7E,$7E,$66,$7E,$00,$00,$00,$00,$18,$18,$00,$00,$00
+  .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF,$00,$00,$00,$00,$00,$00,$00,$00,$00,$7E,$42,$42,$42,$42,$7E,$00,$00,$7E,$42,$42,$42,$42,$7E,$00
+  .byte $00,$7E,$42,$42,$42,$42,$7E,$00,$00,$7E,$5A,$66,$5A,$66,$7E,$00,$00,$00,$7E,$42,$7E,$7E,$00,$00,$00,$00,$7E,$42,$7E,$7E,$00,$00
+  .byte $00,$00,$7E,$42,$7E,$7E,$00,$00,$18,$3C,$7E,$FF,$18,$18,$18,$00,$08,$0C,$FE,$FF,$FE,$0C,$08,$00,$18,$18,$18,$FF,$7E,$3C,$18,$00
+  .byte $10,$30,$7F,$FF,$7F,$30,$10,$00
 HTILEC:
   .byte $E1,$E1,$E1,$E1,$E1,$E1,$E1,$E1,$31,$31,$31,$31,$31,$31,$31,$31,$A1,$A1,$A1,$A1,$A1,$A1,$A1,$A1,$41,$41,$41,$41,$41,$41,$41,$41
   .byte $81,$81,$81,$81,$81,$81,$81,$81,$51,$51,$51,$51,$51,$51,$51,$51,$B1,$B1,$B1,$B1,$B1,$B1,$B1,$B1,$41,$41,$41,$41,$41,$41,$41,$41
+  .byte $E1,$E1,$E1,$E1,$E1,$E1,$E1,$E1,$14,$14,$14,$14,$14,$14,$14,$14,$84,$84,$84,$84,$84,$84,$84,$84,$74,$74,$74,$74,$74,$74,$74,$74
+  .byte $B4,$B4,$B4,$B4,$B4,$B4,$B4,$B4,$34,$34,$34,$34,$34,$34,$34,$34,$84,$84,$84,$84,$84,$84,$84,$84,$74,$74,$74,$74,$74,$74,$74,$74
+  .byte $B4,$B4,$B4,$B4,$B4,$B4,$B4,$B4,$B4,$B4,$B4,$B4,$B4,$B4,$B4,$B4,$B4,$B4,$B4,$B4,$B4,$B4,$B4,$B4,$B4,$B4,$B4,$B4,$B4,$B4,$B4,$B4
+  .byte $B4,$B4,$B4,$B4,$B4,$B4,$B4,$B4
 HTILE_FIRST = 179
 
 ; stamps: runs of row, first column, count, tiles...; $FF = end
@@ -4768,8 +4954,8 @@ GFX_LOAD:
   .byte 2, $00,$61, <512,>512, $F1,0
   .byte 1, $00,$43, <664,>664, <VTILEP,>VTILEP
   .byte 1, $00,$63, <664,>664, <VTILEC,>VTILEC
-  .byte 1, $98,$45, <64,>64, <HTILEP,>HTILEP
-  .byte 1, $98,$65, <64,>64, <HTILEC,>HTILEC
+  .byte 1, $98,$45, <168,>168, <HTILEP,>HTILEP
+  .byte 1, $98,$65, <168,>168, <HTILEC,>HTILEC
   .byte 1, $00,$47, <48,>48, <BIG_TOP,>BIG_TOP
   .byte 1, $40,$47, <48,>48, <BIG_BOT,>BIG_BOT
   .byte 2, $00,$67, <48,>48, $81,0
@@ -4779,8 +4965,8 @@ GFX_LOAD:
   .byte 2, $00,$69, <512,>512, $F1,0
   .byte 1, $00,$4B, <664,>664, <VTILEP,>VTILEP
   .byte 1, $00,$6B, <664,>664, <VTILEC,>VTILEC
-  .byte 1, $98,$4D, <64,>64, <HTILEP,>HTILEP
-  .byte 1, $98,$6D, <64,>64, <HTILEC,>HTILEC
+  .byte 1, $98,$4D, <168,>168, <HTILEP,>HTILEP
+  .byte 1, $98,$6D, <168,>168, <HTILEC,>HTILEC
   .byte 1, $00,$4F, <48,>48, <BIG_TOP,>BIG_TOP
   .byte 1, $40,$4F, <48,>48, <BIG_BOT,>BIG_BOT
   .byte 2, $00,$6F, <48,>48, $81,0
@@ -4790,8 +4976,8 @@ GFX_LOAD:
   .byte 2, $00,$71, <512,>512, $F1,0
   .byte 1, $00,$53, <664,>664, <VTILEP,>VTILEP
   .byte 1, $00,$73, <664,>664, <VTILEC,>VTILEC
-  .byte 1, $98,$55, <64,>64, <HTILEP,>HTILEP
-  .byte 1, $98,$75, <64,>64, <HTILEC,>HTILEC
+  .byte 1, $98,$55, <168,>168, <HTILEP,>HTILEP
+  .byte 1, $98,$75, <168,>168, <HTILEC,>HTILEC
   .byte 1, $00,$57, <48,>48, <BIG_TOP,>BIG_TOP
   .byte 1, $40,$57, <48,>48, <BIG_BOT,>BIG_BOT
   .byte 2, $00,$77, <48,>48, $81,0
