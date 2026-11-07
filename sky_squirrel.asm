@@ -95,6 +95,7 @@ OI          = $7C      ; object being handled
 PSX         = $7D      ; where Pip starts this stage
 PSY         = $7E
 NUTS        = $7F      ; nuts taken (tests)
+OWLMAX      = $8C      ; owls at most on this stage
 P_JOY       = $80      ; 2 bytes (joystick, 1 = pressed)
 PTS_L       = $82      ; points to add (BCD)
 PTS_M       = $83
@@ -232,6 +233,7 @@ DIVE_MAXL   = $80
 GOLD_N      = 9          ; acorns to take for a gold acorn
 POWER_T     = 180        ; the gold acorn lasts 6 s (2-frame units)
 LEAF_S      = 18         ; seconds between two leaves
+OWL_AIM     = 48         ; frames an owl swoops before it looks for Pip again
 
 ; ---------------- records on the SD (lib_records.asm) ----------------
 REC_ZONE    = 33         ; fixed zone of the game in the save area
@@ -1493,11 +1495,19 @@ STAGE_INIT:
   LDA #7
 .si_s:
   STA SPDBASE
-  LDA SCRN                     ; foes at most: 3, 4, 5, 6
-  LSR A
-  LSR A
+  LDA SCRN                     ; owls at most: 1 on stages 1-5, then 2, one more a round (3 at most)
+  CMP #5
+  LDA #1
+  ADC LOOPN
+  CMP #4
+  BCC .si_w
+  LDA #3
+.si_w:
+  STA OWLMAX
+  LDX SCRN                     ; foes at most: 2, 3, 4, 5, 6 (3 stages each), one more a round
+  LDA SCRN_3,X
   CLC
-  ADC #3
+  ADC #2
   ADC LOOPN
   CMP #7
   BCC .si_m
@@ -2359,9 +2369,33 @@ SLANT:
   RTS
 
 ; ---------------------------------------------------------------
-; an owl: after Pip, slowly (away from him while the gold acorn works)
+; an owl: now and then it looks for Pip (away from him while the gold acorn
+; works), then swoops straight that way on the slant: it can be dodged
 ; ---------------------------------------------------------------
 OWL:
+  DEC O_T,X
+  BNE .ow_f
+  LDA #OWL_AIM                 ; a new aim
+  STA O_T,X
+  LDA PX                       ; bit 0: Pip on the left
+  CMP O_X,X
+  LDA #0
+  ROL A
+  EOR #1
+  STA T4
+  LDA PY                       ; bit 1: Pip above
+  CMP O_Y,X
+  LDA #0
+  ROL A
+  EOR #1
+  ASL A
+  ORA T4
+  LDY POWERT
+  BEQ .ow_d
+  EOR #3
+.ow_d:
+  STA O_D,X
+.ow_f:
   LDY O_LV,X                   ; the owls of the odd slots a level slower: they part
   TXA
   LSR A
@@ -2371,43 +2405,30 @@ OWL:
   DEY
 .ow_v:
   JSR SPEED_Y
-  LSR T1
+  LSR T1                       ; half the speed of the others
   ROR T0
-  LDA PX
-  CMP O_X,X
-  BEQ .ow_y
-  LDA #0                       ; T4 = 1: Pip is on the left
-  ROL A
-  EOR #1
-  LDY POWERT
-  BEQ .ow_x
-  EOR #1
-.ow_x:
-  CMP #0
-  BNE .ow_l
-  JSR GO_RIGHT
-  BRA .ow_y
-.ow_l:
-  JSR GO_LEFT
-.ow_y:
-  LSR T1                       ; up and down at half that
-  ROR T0
-  LDA PY
-  CMP O_Y,X
-  BEQ .ow_r
-  LDA #0
-  ROL A
-  EOR #1
-  LDY POWERT
-  BEQ .ow_yy
-  EOR #1
-.ow_yy:
-  CMP #0
-  BNE .ow_u
-  JMP GO_DOWN
-.ow_u:
-  JMP GO_UP
-.ow_r:
+  JMP SLANT
+
+; C = 1 if there are owls enough already (keeps X)
+OWLS_FULL:
+  STZ T4
+  LDY #NOB-1
+.of_l:
+  LDA O_K,Y
+  CMP #K_OWL
+  BEQ .of_c
+  CMP #K_SPAWN
+  BNE .of_n
+  LDA O_H,Y
+  CMP #K_OWL
+  BNE .of_n
+.of_c:
+  INC T4
+.of_n:
+  DEY
+  BPL .of_l
+  LDA T4
+  CMP OWLMAX
   RTS
 
 ; ---------------------------------------------------------------
@@ -2497,6 +2518,12 @@ CONE:
   BNE .hg_s
   DEC O_T,X
   BNE .hg_s
+  LDA #200                     ; owls enough: it walks on
+  STA O_T,X
+  JSR OWLS_FULL
+  BCS .hg_s
+  LDA #1
+  STA O_T,X
   LDA #K_OWL
   STA O_K,X
   LDA #W_SPAWN
@@ -2590,7 +2617,15 @@ WALK_X:
 SPAWN:
   DEC O_T,X
   BNE .sp_r
-  LDA O_H,X
+  LDA O_H,X                    ; an owl, if there are not owls enough already (else a hedgehog)
+  CMP #K_OWL
+  BNE .sp_k
+  STZ O_K,X
+  JSR OWLS_FULL
+  LDA #K_OWL
+  BCC .sp_k
+  LDA #K_HOG
+.sp_k:
   STA O_K,X
   LDA SPDBASE
   STA O_LV,X
@@ -2600,6 +2635,11 @@ SPAWN:
   LDA #200                     ; a hedgehog flies after 200 frames on the ground
   STA O_T,X
   LDA O_K,X
+  CMP #K_OWL
+  BNE .sp_o
+  LDA #1                       ; an owl aims at once
+  STA O_T,X
+.sp_o:
   CMP #K_HOG
   BCC .sp_r
   CMP #K_CROW
@@ -4913,6 +4953,7 @@ EN_KIND:
   .byte K_CROW,K_CONE,K_OWL,K_HOG              ; the old mill
   .byte K_CROW,K_OWL,K_WASP,K_CROW             ; the city roofs
   .byte K_OWL,K_CROW,K_CONE,K_WASP             ; the snow peaks
+SCRN_3:     .byte 0,0,0,1,1,1,2,2,2,3,3,3,4,4,4   ; stage / 3
 BOB_T:      .byte 0,1,2,3,3,2,1,0              ; Pip on the title, up and down
 
 ; title: Pip (belly, fur), an owl, a crow, the gold acorn, a leaf (sprite Y, X, pattern, colour)
