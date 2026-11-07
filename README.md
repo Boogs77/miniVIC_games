@@ -43,6 +43,7 @@ A collection of arcade games written in **65C02 assembly** for the **Boogs77-min
 | `ghost_ghust.asm` | **Ghost & Ghust** | 1–2 | An original single-screen platform game: two kind little ghosts, Ghost and Ghust (two players at the same time), take back their abandoned villa room by room, from the cellar up to the tower, 30 rooms. Shoot a round cloud at a creature to shut it inside, then touch the cloud to pop it: the creature falls as a sweet, and clouds that touch pop together for 1000, 2000, 4000 and 8000 points. Bats, spiders, hopping pumpkins, candles that throw flames and armours that first lose their helmet; a creature left too long in its cloud gets out angry. Collect G-H-O-S-T for an extra life, the lantern and the bell help, and if you dawdle the sun rises and its ray hunts you. |
 | `wormer.asm` | **Wormer** | 1–2 | An original maze game with a growing body: a caterpillar that never stops crawls through the tunnels of a giant apple, slice by slice down to the core, 24 slices and then again faster. Every seed makes it one piece longer and it must never bite its own tail. The joystick books the next turn at the first crossing; at a bend it turns by itself. The gold seed is worth five times, the leaf makes it four pieces shorter and the honey stops the clock; when time runs out the apple rots. From slice 5 the worms of the apple come out of their holes. Players take turns. |
 | `sky_squirrel.asm` | **Sky Squirrel** | 1–2 | An original jump and glide platform game: Pip, a flying squirrel, gathers the 24 acorns a storm scattered on every stage, 15 stages in five places (an oak wood, a waterfall, an old mill, the city roofs, the snow peaks), then the world again, faster. Hold the button to jump higher, press it again in the air to glide down slowly. One acorn at a time shines: take them in that order for the chain bonus. Owls, wasps, hedgehogs, crows and pine cones come in from the top; the gold acorn turns them into nuts for a while, and falling leaves raise the multiplier or give a life. Players take turns. |
+| `room.asm` | **Room** | 1 | An original first-person maze shooter: a mining base on a moon has gone mad and a technician goes down level by level to the reactor, 8 levels and then the base again, faster. Step from cell to cell and turn by quarters while the corridors are drawn in perspective; strafe and switch weapons with button 2. Guard robots, tunnel spiders, drones that shoot from afar and the keeper of the reactor; a pulse pistol, a rifle and a plasma cannon that hits every foe in line. Red, blue and yellow cards open the doors, the lift ends the level; energy cells and medical kits lie in the dead ends. |
 
 Each source file starts with a header describing controls, rules and technical notes.
 
@@ -311,6 +312,12 @@ Captured with the miniVIC emulator in [`tools`](tools): title screen and gamepla
 <p align="center">
   <img src="screenshots/sky_squirrel_title.png" width="45%" />
   <img src="screenshots/sky_squirrel_game.png" width="45%" />
+</p>
+
+### Room
+<p align="center">
+  <img src="screenshots/room_title.png" width="45%" />
+  <img src="screenshots/room_game.png" width="45%" />
 </p>
 
 ---
