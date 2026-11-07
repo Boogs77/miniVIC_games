@@ -26,5 +26,6 @@
   "dune_ranger":     [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 230], ["press", "p1", "fire2", 330], ["press", "p1", "fire+fire2", 3], ["press", "p1", "fire2", 12], ["shot", "game"]],
   "sky_tug":         [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 120], ["press", "p1", "fire+left", 30], ["press", "p1", "fire", 250], ["shot", "game"]],
   "super_carlo":     [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 460], ["press", "p1", "right", 70], ["press", "p1", "right+fire", 3], ["wait", 14], ["shot", "game"]],
-  "ghost_ghust":     [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 380], ["press", "p1", "right", 40], ["press", "p1", "fire", 3], ["wait", 30], ["press", "p1", "fire2", 3], ["wait", 20], ["shot", "game"]]
+  "ghost_ghust":     [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 380], ["press", "p1", "right", 40], ["press", "p1", "fire", 3], ["wait", 30], ["press", "p1", "fire2", 3], ["wait", 20], ["shot", "game"]],
+  "wormer":          [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 200], ["press", "p1", "up", 30], ["wait", 40], ["shot", "game"]]
 }
