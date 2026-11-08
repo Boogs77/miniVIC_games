@@ -44,6 +44,12 @@ A collection of arcade games written in **65C02 assembly** for the **Boogs77-min
 | `wormer.asm` | **Wormer** | 1–2 | An original maze game with a growing body: a caterpillar that never stops crawls through the tunnels of a giant apple, slice by slice down to the core, 24 slices and then again faster. Every seed makes it one piece longer and it must never bite its own tail. The joystick books the next turn at the first crossing; at a bend it turns by itself. The gold seed is worth five times, the leaf makes it four pieces shorter and the honey stops the clock; when time runs out the apple rots. From slice 5 the worms of the apple come out of their holes. Players take turns. |
 | `sky_squirrel.asm` | **Sky Squirrel** | 1–2 | An original jump and glide platform game: Pip, a flying squirrel, gathers the 24 acorns a storm scattered on every stage, 15 stages in five places (an oak wood, a waterfall, an old mill, the city roofs, the snow peaks), then the world again, faster. Hold the button to jump higher, press it again in the air to glide down slowly. One acorn at a time shines: take them in that order for the chain bonus. Owls, wasps, hedgehogs, crows and pine cones come in from the top; the gold acorn turns them into nuts for a while, and falling leaves raise the multiplier or give a life. Players take turns. |
 | `room.asm` | **Room** | 1 | An original first-person maze shooter: a mining base on a moon has gone mad and a technician goes down level by level to the reactor, 8 levels and then the base again, faster. Step from cell to cell and turn by quarters while the corridors are drawn in perspective; strafe, switch weapons and look at the map of the places already seen with button 2. Guard robots, tunnel spiders, drones that shoot from afar and the keeper of the reactor; a pulse pistol, a rifle and a plasma cannon that hits every foe in line. Red, blue and yellow cards open the doors, the lift ends the level; energy cells and medical kits lie in the dead ends. |
+| `zork1_kb.asm` | **Zork I (keyboard)** | 1 | *The Great Underground Empire*: the Infocom text adventure, the original story file on our own **miniVIC Z-Machine**. Explore the white house, the forest and the dungeons below, collect the 19 treasures for the trophy case and outwit the thief and the troll, up to 350 points. Type the commands on the PS/2 keyboard. |
+| `zork1_joy.asm` | **Zork I (joystick)** | 1 | The same story, with the sentences made of words chosen from menus with the joystick. |
+| `zork2_kb.asm` | **Zork II (keyboard)** | 1 | *The Wizard of Frobozz*: the second Infocom story, on the miniVIC Z-Machine. The barrow leads deeper into the empire, where the Wizard of Frobozz plays his tricks while you look for his treasures, past the dragon and the princess. Type the commands on the PS/2 keyboard. |
+| `zork2_joy.asm` | **Zork II (joystick)** | 1 | The same story, with the sentences made of words chosen from menus with the joystick. |
+| `zork3_kb.asm` | **Zork III (keyboard)** | 1 | *The Dungeon Master*: the third Infocom story, on the miniVIC Z-Machine. At the bottom of the endless stair the Dungeon Master puts you to the test, between the Land of Shadow, the royal puzzle and the time machine. Type the commands on the PS/2 keyboard. |
+| `zork3_joy.asm` | **Zork III (joystick)** | 1 | The same story, with the sentences made of words chosen from menus with the joystick. |
 
 Each source file starts with a header describing controls, rules and technical notes.
 
@@ -59,6 +65,17 @@ Every game keeps its **8 best scores**, each signed with **3 initials**, on the 
 * Times Tables keeps the scores of the challenge, with the screens in Italian and the table under **RECORD** in the menu;
 * the records are written with the **BIOS KEYB/SD** in a save area after the first 16 MB of the card, which the SD tools never overwrite; with the older BIOS the table stays in RAM until the power goes off;
 * the web emulator keeps the save area in the browser and can export or import it as a `.json` file; `saves.py` of [bo6502-SDbuilder](https://github.com/Boogs77/bo6502-SDbuilder) reads and writes the same area on a real card.
+
+### 📜 miniVIC Z-Machine (Zork I, II, III)
+
+The three Zork programs run the **original Infocom story files** (Z-machine version 3) on the **miniVIC Z-Machine**, a new interpreter written for the miniVIC in 65C02 assembly from the *Z-Machine Standards Document 1.1*:
+
+* the story is read from the SD card (sectors from 20480, only in the full SD of [bo6502-SDbuilder](https://github.com/Boogs77/bo6502-SDbuilder)): its dynamic memory stays in RAM, the rest is paged in 512-byte frames of RAM and of the free VRAM;
+* 40 × 24 text mode with the status line (room, score, moves), word wrapping and `[MORE]`;
+* **keyboard version** (PS/2 keyboard of the BIOS KEYB/SD): type the commands, BACKSPACE / ESC to correct, UP brings the last command back;
+* **joystick version**: the sentence is made of words chosen from lists at the bottom of the screen. UP / DOWN choose the list (GO, VERBS, HERE = the nouns on the screen, WORDS, ALL = the whole dictionary, GAME = look, inventory, save ...), LEFT / RIGHT the word, button 1 adds it (a direction or a game command alone is sent at once), button 2 sends the sentence; hold button 2 with UP to take the last word away, DOWN to clear, LEFT / RIGHT to jump to the previous / next letter. Digits join into numbers;
+* **SAVE** and **RESTORE** use one slot per story on the SD card (save zones 35, 36, 37), shared by the two versions; `$VERIFY` checks the story on the card;
+* the story files come from [historicalsource/zork1](https://github.com/historicalsource/zork1), [zork2](https://github.com/historicalsource/zork2) and [zork3](https://github.com/historicalsource/zork3), released under the **MIT License** (c) 2025 Microsoft; they are written on the SD card unchanged, together with their licence.
 
 ---
 
@@ -105,7 +122,7 @@ To rebuild them:
 The script assembles every file into `bin/`, optionally copies the sources and binaries to the local folder written in `copy.path`, runs each game in the emulator to update its screenshots, then commits and pushes the updated binaries and screenshots. Use `build.ps1 -NoPublish` to build without publishing.
 
 ### 🖥️ Emulator & Screenshots
-The [`tools`](tools) folder contains a small **miniVIC emulator** written in Node.js (no dependencies): W65C02S CPU, TMS9918A video with sprites, VDP interrupt on NMI and the two joysticks. It has no audio, but it can record what the games write to the two AY chips. With the BIOS KEYB/SD option (the default) it also emulates the SD sector routines at `$FD18`/`$FD1B`/`$FD1E` on the save area of the card (sectors from 16 MB), so the games that keep their records on the SD can be tested; `bios: 'old'` leaves them out, like the BIOS 24.10.26.
+The [`tools`](tools) folder contains a small **miniVIC emulator** written in Node.js (no dependencies): W65C02S CPU, TMS9918A video with sprites, VDP interrupt on NMI and the two joysticks. It has no audio, but it can record what the games write to the two AY chips. With the BIOS KEYB/SD option (the default) it also emulates the PS/2 keyboard and the SD sector routines at `$FD18`/`$FD1B`/`$FD1E` on the save area of the card (sectors from 16 MB), so the games that keep their records on the SD can be tested; `bios: 'old'` leaves them out, like the BIOS 24.10.26.
 * `node tools/screenshots.js` runs every game and saves its screenshots in [`screenshots`](screenshots).
 * `tools/screenshots.json` defines, for each game, the input sequence (wait, button presses, random play) and when to take each picture.
 * `node tools/aywav.js tank` runs a game, records its AY writes and renders them to a stereo WAV in `sounds/` (left AY = left channel), to listen to the music and sound effects without the hardware.
@@ -320,6 +337,24 @@ Captured with the miniVIC emulator in [`tools`](tools): title screen and gamepla
   <img src="screenshots/room_game.png" width="45%" />
 </p>
 
+### Zork I (keyboard and joystick)
+<p align="center">
+  <img src="screenshots/zork1_kb_game.png" width="45%" />
+  <img src="screenshots/zork1_joy_game.png" width="45%" />
+</p>
+
+### Zork II (keyboard and joystick)
+<p align="center">
+  <img src="screenshots/zork2_kb_game.png" width="45%" />
+  <img src="screenshots/zork2_joy_game.png" width="45%" />
+</p>
+
+### Zork III (keyboard and joystick)
+<p align="center">
+  <img src="screenshots/zork3_kb_game.png" width="45%" />
+  <img src="screenshots/zork3_joy_game.png" width="45%" />
+</p>
+
 ---
 
 ## 🔗 Useful Links & Resources
@@ -339,7 +374,7 @@ The games in this repository are **fan-made tributes** to classic arcade games. 
 
 * All titles, characters, artwork, sounds and trademarks of the original games (such as *Asteroids*, *Breakout*, *Bubbles*, *Centipede*, *Defender*, *Exerion*, *Gravitar*, *Joust*, *Lunar Lander*, *Missile Command*, *Moon Cresta*, *Quantum*, *Radar Scope*, *Space Firebird*, *Space Invaders*, *Stargate* and *Warlords*) belong to their **respective owners**. Their names are used only to identify the games that inspired these versions.
 * This project is **not affiliated with, endorsed or sponsored by** any of the rights holders, and claims no rights over the original games.
-* No original program code or ROM data has been used: graphics and sounds are new re-creations made to resemble the originals.
+* No original program code or ROM data has been used: graphics and sounds are new re-creations made to resemble the originals. The only exception are the Zork I-III story files, which Microsoft released under the MIT License: they are not in this repository but on the SD card, and they run on an interpreter written from scratch. *Zork* is a trademark of its owner.
 * No commercial use is intended. If you are a rights holder and have any concern, please [open an issue](https://github.com/Boogs77/miniVIC_games/issues) and the material will be reviewed or removed promptly.
 
 ---

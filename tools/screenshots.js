@@ -15,6 +15,9 @@
 //                             right until the X in memory at "self" reaches the one at "target"
 //                             (decimal RAM addresses, e.g. ball and paddle); fire = shoot
 //   ["shot", "name"]          saves screenshots/<game>_<name>.png
+//   ["type", "text"]          types the text on the PS/2 keyboard of the BIOS KEYB/SD ("\n" = Enter)
+//   ["stories"]               (first step) an SD with the story area of the miniVIC Z-Machine, made from
+//                             ../bo6502-SDbuilder/stories.txt and stories/ (sector 20480, like update_sd.py)
 // Inputs: up down left right fire fire2 (combined with "+", e.g. "right+fire")
 // A game that is not in the file uses the "_default" sequence.
 
@@ -37,9 +40,25 @@ function rng(seed) {                         // deterministic generator (same sc
   return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
 }
 
+function storySd() {                         // 20480 empty sectors, then the story index and the stories
+  const sdb = path.join(ROOT, '..', 'bo6502-SDbuilder');
+  const area = Buffer.alloc(512 * (1 + 3 * 256));
+  area.write('ZSTO', 0, 'ascii'); area[4] = 1; area[5] = 3;
+  for (const line of fs.readFileSync(path.join(sdb, 'stories.txt'), 'utf8').split('\n')) {
+    const mm = line.match(/^\s*([^#=\s]+)\s*=\s*(\d)/);
+    if (!mm) continue;
+    const b = fs.readFileSync(path.join(sdb, 'stories', mm[1])), k = +mm[2], e = 16 * k;
+    area.writeUInt16LE(Math.ceil(b.length / 512), e);
+    area[e + 2] = b[3]; area[e + 3] = b[2]; b.copy(area, e + 4, 0x12, 0x18);
+    area[e + 10] = b[0x1D]; area[e + 11] = b[0x1C]; area[e + 12] = b[0x1B]; area[e + 13] = b[0x1A];
+    b.copy(area, 512 * (1 + (k - 1) * 256));
+  }
+  return Buffer.concat([Buffer.alloc(20480 * 512), area]);
+}
+
 function runGame(name, steps, outDir) {
   const bin = fs.readFileSync(path.join(ROOT, 'bin', `${name}.bin`));
-  const m = new MiniVIC(bin);
+  const m = steps[0][0] === 'stories' ? new MiniVIC(bin, 0x0FD0, 0x1000, { sd: storySd() }) : new MiniVIC(bin);
   const rand = rng(1234);
   const hold = [0, 0], timer = [0, 0];
   const randomJoy = () => {
@@ -81,6 +100,10 @@ function runGame(name, steps, outDir) {
       m.joy = [0, 0];
     }
     else if (cmd === 'play') { for (let i = 0; i < a; i++) { randomJoy(); m.runFrame(); } m.joy = [0, 0]; }
+    else if (cmd === 'stories') { /* see above */ }
+    else if (cmd === 'type') {
+      for (const ch of a) { m.pressKeys(ch); for (let i = 0; i < 3; i++) m.runFrame(); }
+    }
     else if (cmd === 'shot') {
       const file = path.join(outDir, `${name}_${a}.png`);
       fs.writeFileSync(file, m.vdp.png(2));

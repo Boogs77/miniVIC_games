@@ -29,5 +29,11 @@
   "ghost_ghust":     [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 380], ["press", "p1", "right", 40], ["press", "p1", "fire", 3], ["wait", 30], ["press", "p1", "fire2", 3], ["wait", 20], ["shot", "game"]],
   "wormer":          [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 200], ["press", "p1", "up", 30], ["wait", 40], ["shot", "game"]],
   "sky_squirrel":    [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 300], ["press", "p1", "right", 20], ["press", "p1", "right+fire", 20], ["wait", 8], ["shot", "game"]],
-  "room":            [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 300], ["press", "p1", "up", 3], ["wait", 20], ["press", "p1", "fire", 3], ["wait", 2], ["shot", "game"]]
+  "room":            [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 300], ["press", "p1", "up", 3], ["wait", 20], ["press", "p1", "fire", 3], ["wait", 2], ["shot", "game"]],
+  "zork1_kb":        [["stories"], ["wait", 120], ["shot", "title"], ["type", " "], ["wait", 200], ["type", "open mailbox\n"], ["wait", 150], ["type", "read leaflet\n"], ["wait", 300], ["shot", "game"]],
+  "zork2_kb":        [["stories"], ["wait", 120], ["shot", "title"], ["type", " "], ["wait", 200], ["type", "take lamp and sword\n"], ["wait", 150], ["type", "s\n"], ["wait", 300], ["shot", "game"]],
+  "zork3_kb":        [["stories"], ["wait", 120], ["shot", "title"], ["type", " "], ["wait", 200], ["type", "look\n"], ["wait", 150], ["type", "s\n"], ["wait", 300], ["shot", "game"]],
+  "zork1_joy":       [["stories"], ["wait", 120], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 420], ["press", "p1", "fire", 3], ["wait", 150], ["press", "p1", "down", 3], ["press", "p1", "right", 3], ["press", "p1", "right", 3], ["press", "p1", "fire", 3], ["press", "p1", "down", 3], ["wait", 30], ["shot", "game"]],
+  "zork2_joy":       [["stories"], ["wait", 120], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 300], ["press", "p1", "fire", 3], ["wait", 300], ["press", "p1", "down", 3], ["press", "p1", "fire", 3], ["press", "p1", "down", 3], ["wait", 30], ["shot", "game"]],
+  "zork3_joy":       [["stories"], ["wait", 120], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 300], ["press", "p1", "fire", 3], ["wait", 300], ["press", "p1", "down", 3], ["press", "p1", "right", 3], ["press", "p1", "right", 3], ["press", "p1", "right", 3], ["press", "p1", "right", 3], ["press", "p1", "fire", 3], ["press", "p1", "down", 3], ["wait", 30], ["shot", "game"]]
 }

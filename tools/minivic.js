@@ -2,7 +2,8 @@
 // minivic.js - minimal miniVIC emulator used to take the screenshots of the games
 //
 //   CPU  W65C02S at 1 MHz (65C02 instructions, approximate cycles)
-//   VDP  TMS9918A: Graphics I/II + sprites, NMI at the vblank (60 Hz)
+//   VDP  TMS9918A: Graphics I/II + sprites, text mode 40 x 24, NMI at the vblank (60 Hz)
+//   KBD  PS/2 keyboard through the BIOS KEYB/SD routines (see pressKeys), IRQ stub at $FF20 -> JSR $0FA0
 //   VIA  joysticks: PORTB $D580 (P2), PORTA $D581 (P1), active low
 //   AY   writes to $D380-$D385 are ignored (no audio; tools/aywav.js records them)
 //
@@ -85,6 +86,15 @@ class CPU {
   pull() { this.sp = (this.sp + 1) & 0xFF; return this.rd(0x100 | this.sp); }
   nz(v) { this.p = (this.p & ~(N | Z)) | (v & N) | (v ? 0 : Z); return v; }
   flag(f, on) { if (on) this.p |= f; else this.p &= ~f; }
+
+  irq() {
+    this.waiting = false;
+    this.push(this.pc >> 8); this.push(this.pc & 0xFF);
+    this.push((this.p & ~B) | U);
+    this.p = (this.p | I) & ~D;
+    this.pc = this.rd16(0xFFFE);
+    this.cycles += 7;
+  }
 
   nmi() {
     this.waiting = false;
@@ -268,6 +278,21 @@ class VDP {
     const r = this.reg, vr = this.vram, out = this.screen;
     const bd = r[7] & 15;
     if (!(r[1] & 0x40)) { out.fill(bd); return; }
+    if (r[1] & 0x10) {                                         // text mode: 40 x 24 cells of 6 x 8, no sprites
+      const nt = (r[2] & 0x0F) << 10, pg = (r[4] & 7) << 11;
+      const fg = (r[7] >> 4) || 1, bg = bd || 1;
+      out.fill(bg);
+      for (let row = 0; row < 24; row++) {
+        for (let col = 0; col < 40; col++) {
+          const pa = pg + vr[nt + row * 40 + col] * 8;
+          for (let line = 0; line < 8; line++) {
+            const pat = vr[pa + line], o = (row * 8 + line) * 256 + 8 + col * 6;
+            for (let b = 0; b < 6; b++) if (pat & (0x80 >> b)) out[o + b] = fg;
+          }
+        }
+      }
+      return;
+    }
     const nt = (r[2] & 0x0F) << 10;
     const g2 = (r[0] & 0x02) !== 0;
     const ct = g2 ? (r[3] & 0x80) << 6 : r[3] << 6;
@@ -361,13 +386,22 @@ class MiniVIC {
     // stub of the NMI handler of the BIOS
     const stub = [0x48, 0xDA, 0x5A, 0x20, 0xD0, 0x0F, 0xAD, 0x01, 0xB0, 0x7A, 0xFA, 0x68, 0x40];
     this.mem.set(stub, 0xFF00);
-    this.mem[0xFF20] = 0x40;                                   // RTI for IRQ/BRK
+    // IRQ/BRK of the BIOS: PHA PHX PHY / JSR $0FA0 / PLY PLX PLA / RTI (the games leave an RTS at $0FA0)
+    this.mem.set([0x48, 0xDA, 0x5A, 0x20, 0xA0, 0x0F, 0x7A, 0xFA, 0x68, 0x40], 0xFF20);
+    if (loadAddr > 0x0FA0 || loadAddr + bin.length <= 0x0FA0) this.mem[0x0FA0] = 0x60;
     this.mem[0xFFFA] = 0x00; this.mem[0xFFFB] = 0xFF;
     this.mem[0xFFFE] = 0x20; this.mem[0xFFFF] = 0xFF;
     this.bios = opts.bios || 'keybsd';
     if (this.bios === 'keybsd') {
       for (const a of [0xFD18, 0xFD1B, 0xFD1E]) this.mem.set([0x4C, a & 0xFF, a >> 8], a);
     }
+    // PS/2 keyboard of the BIOS KEYB/SD: JT_CHRIN ($FD03) gives the next key of this.keys (C=1) or C=0;
+    // KB_IFR ($D18D) bit 1 = a key is waiting (CA1); with KB_IER ($D18E) bit 1 on, a waiting key is an IRQ.
+    // pressKeys(text) queues ASCII (\n = Enter); JT_KB_MODE ($FD21) and JT_FLUSH_KB ($FD15) just return.
+    this.keys = [];
+    this.kbIer = 0;
+    // opts.sd: Buffer of an SD image: sectors below the save area are read from it (programs, documents, stories)
+    this.sd = opts.sd || null;
     this.saves = opts.saves || new Map();
     this.sdStats = { calls: 0, errors: 0, badWrites: 0, nmiOn: 0 };
     this.vdp = new VDP();
@@ -382,6 +416,8 @@ class MiniVIC {
     if (a === 0xB001) return this.vdp.readStatus();
     if (a === 0xD581) return (~this.joy[0]) & 0xFF;
     if (a === 0xD580) return (~this.joy[1]) & 0xFF;
+    if (a === 0xD18D) return this.keys.length ? 0x82 : 0;
+    if (a === 0xD18E) return this.kbIer | 0x80;
     return this.mem[a];
   }
   write(a, v) {
@@ -389,12 +425,15 @@ class MiniVIC {
     if (a === 0xB001) return this.vdp.writeCtrl(v);
     if (a >= 0xD380 && a <= 0xD385) return;                    // AY: no audio
     if (a >= 0xD580 && a <= 0xD583) return;                    // VIA: DDR
+    if (a === 0xD18E) { this.kbIer = v & 0x80 ? this.kbIer | (v & 0x7F) : this.kbIer & ~v; return; }
     if (a < 0x8000) this.mem[a] = v;
   }
+  pressKeys(text) { for (const ch of text) this.keys.push(ch === '\n' ? 0x0D : ch.charCodeAt(0)); }
   checkNmi() {
     const irq = this.vdp.irq();
     if (irq && !this.lastIrq) this.cpu.nmi();
     this.lastIrq = irq;
+    if ((this.kbIer & 2) && this.keys.length && !(this.cpu.p & I)) this.cpu.irq();
   }
   runFrame() {
     const cpu = this.cpu;
@@ -414,7 +453,20 @@ class MiniVIC {
   // ---------------- SD routines of the BIOS KEYB/SD ----------------
   /** call before every cpu.step() in a test's own frame loop: runs the SD routine the PC is at, if any */
   trySd() {
-    if (this.bios !== 'keybsd' || !SD_CYCLES[this.cpu.pc]) return false;
+    if (this.bios !== 'keybsd') return false;
+    const pc = this.cpu.pc;
+    if (pc === 0xFD03 || pc === 0xFD21 || pc === 0xFD15) {     // keyboard routines
+      const cpu = this.cpu;
+      if (pc === 0xFD03) {
+        const k = this.keys.length ? this.keys.shift() : -1;
+        if (k >= 0) cpu.a = k;
+        cpu.flag(C, k >= 0);
+      }
+      cpu.pc = ((cpu.pull() | (cpu.pull() << 8)) + 1) & 0xFFFF;
+      cpu.cycles += 120;
+      return true;
+    }
+    if (!SD_CYCLES[pc]) return false;
     this.sdCall(this.cpu.pc);
     return true;
   }
@@ -435,7 +487,8 @@ class MiniVIC {
       const inArea = sector >= SAVE_FIRST && sector < SAVE_FIRST + SAVE_SECTORS;
       if (sector < 0 || sector >= SAVE_FIRST + SAVE_SECTORS) ok = false;
       else if (pc === 0xFD18) {
-        const d = (inArea && this.saves.get(sector)) || new Uint8Array(512);
+        let d = (inArea && this.saves.get(sector)) || new Uint8Array(512);
+        if (!inArea && this.sd && (sector + 1) * 512 <= this.sd.length) d = this.sd.subarray(sector * 512, sector * 512 + 512);
         for (let i = 0; i < 512; i++) if (buf + i < 0x8000) m[buf + i] = d[i];
       } else if (inArea) {
         this.saves.set(sector, Uint8Array.from(m.subarray(buf, buf + 512)));
