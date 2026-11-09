@@ -55,6 +55,7 @@ A collection of arcade games written in **65C02 assembly** for the **Boogs77-min
 | `hedge_hop.asm` | **Hedge Hop** | 1–2 | An original crossing game: Spike the hedgehog goes home to the hedge. First a country road with a milk truck, motorbikes, cars and tractors, then a stream crossed on floating logs and lily pads, some of which go under now and then. One hop a lane, 30 seconds a hedgehog, five holes in the hedge to fill. A beetle in a hole and a little hedgehog waiting on a log are worth more; from level 2 a fox trots on the bank, from level 3 a heron lands in the hedge, from level 4 a snake walks on the logs. Morning, afternoon, sunset and night, then morning again, faster. Players take turns. |
 | `mole_hole.asm` | **Mole Hole** | 1–2 | An original digging game: Mole the mole digs tunnels under a vegetable garden, through soil, clay, gravel and rock. Grubs follow the tunnels and now and then creep through the earth, the mole cricket digs new tunnels of its own. Mole's ice ray freezes a bug a little more at every hit: the third time it becomes a block of ice and breaks, worth more the deeper it is. Potatoes and stones fall when the earth below them is gone and squash whoever is under them; after two of them a vegetable shows in the middle. The last bug left runs to the surface. Eight gardens, then again, faster. Players take turns, each with his own garden. |
 | `lighthouse_keeper.asm` | **Lighthouse Keeper** | 1–2 | An original climbing game: on a stormy night Gus the keeper climbs back to relight his lighthouse, while Squawk the seagull throws coconuts that roll down the sloping planks and now and then down a ladder. Jump over them, or take a broom and sweep them away for a few seconds. Four screens: the pier (a blue coconut in the lobster pot lets out a crab), the cliff (lifts made of waves), the stairs (starfish hopping down) and the lantern, where Gus shuts the eight open windows to light the lamp again. A bonus counts down on every screen. Players take turns. |
+| `paint_duel.asm` | **Paint Duel** | 1–2 | An original paint-trail duel: two painters push their rollers over a polished floor, and every roller leaves a stripe of wet paint behind. The rollers never stop; the joystick turns them left or right. Roll into wet paint (yours or the other's), the skirting board, a paint can or the table and the round is lost. The button gives a short sprint, three a round. Four rooms in turn, a little faster every two rounds; the first to five rounds wins. One player against the CPU or two players at the same time; the record is the most wins in a row against the CPU. |
 
 Each source file starts with a header describing controls, rules and technical notes.
 
@@ -388,6 +389,12 @@ Captured with the miniVIC emulator in [`tools`](tools): title screen and gamepla
 <p align="center">
   <img src="screenshots/lighthouse_keeper_title.png" width="45%" />
   <img src="screenshots/lighthouse_keeper_game.png" width="45%" />
+</p>
+
+### Paint Duel
+<p align="center">
+  <img src="screenshots/paint_duel_title.png" width="45%" />
+  <img src="screenshots/paint_duel_game.png" width="45%" />
 </p>
 
 ---
