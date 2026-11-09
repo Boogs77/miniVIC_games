@@ -169,6 +169,8 @@ B_M        = $020C       ; mode (M_*)
 B_F        = $0210       ; 1 = scared (turbo)
 B_ACC      = $0214       ; fraction of the speed
 B_REV      = $0218       ; 1 = turn back at the next step
+B_HT       = $021C       ; frames left in the basket after the eyes come home
+PEN_T      = 180         ; the eyes rest 3 s in the basket before going out again
 M_HOUSE    = 0           ; in the basket, bobbing
 M_LEAVE    = 1           ; going out of the basket
 M_RUN      = 2           ; in the room
@@ -1503,6 +1505,7 @@ ROOM_INIT:
   STZ B_F,X
   STZ B_ACC,X
   STZ B_REV,X
+  STZ B_HT,X
   DEX
   BPL .ri_b
   RTS
@@ -1852,6 +1855,17 @@ TIMERS:
 
 ; the next bunny in the basket comes out: after its dust, or after 4 s without dust
 RELEASE:
+  LDX #NB-1                    ; the eyes resting in the basket: out when their time is up
+.rl_h:
+  LDA B_HT,X
+  BEQ .rl_hn
+  DEC B_HT,X
+  BNE .rl_hn
+  LDA #M_LEAVE
+  STA B_M,X
+.rl_hn:
+  DEX
+  BPL .rl_h
   LDA RELT
   CMP #255
   BEQ .rl_0
@@ -1861,7 +1875,10 @@ RELEASE:
 .rl_l:
   LDA B_M,X
   CMP #M_HOUSE
+  BNE .rl_n
+  LDA B_HT,X                   ; resting after the eyes: not yet
   BEQ .rl_c
+.rl_n:
   INX
   CPX #NB
   BNE .rl_l
@@ -2188,9 +2205,11 @@ B_STEP:
   LDA #1
   STA B_D,X
   RTS
-.en_in:
-  LDA #M_LEAVE
+.en_in:                        ; home: a rest in the basket (RELEASE lets it out)
+  LDA #M_HOUSE
   STA B_M,X
+  LDA #PEN_T
+  STA B_HT,X
   STZ B_F,X
   RTS
 
