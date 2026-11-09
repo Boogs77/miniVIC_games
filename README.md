@@ -51,6 +51,7 @@ A collection of arcade games written in **65C02 assembly** for the **Boogs77-min
 | `zork3_kb.asm` | **Zork III (keyboard)** | 1 | *The Dungeon Master*: the third Infocom story, on the miniVIC Z-Machine. At the bottom of the endless stair the Dungeon Master puts you to the test, between the Land of Shadow, the royal puzzle and the time machine. Type the commands on the PS/2 keyboard. |
 | `zork3_joy.asm` | **Zork III (joystick)** | 1 | The same story, with the sentences made of words chosen from menus with the joystick. |
 | `robo_vac.asm` | **Robo Vac** | 1–2 | An original maze-chase game: a little robot vacuum cleans the house room by room, from the kitchen to the attic, 8 rooms and then the house again, faster. Four dust bunnies hunt it: Fluff follows it, Lint cuts it off, Fuzz dashes when it sees it, Grit guards the wall sockets. Every socket gives a few seconds of turbo, when the bunnies turn pale and the robot sucks them up for 200, 400, 800 and 1600 points. Lost things show up under the laundry basket, the passage under the doors leads to the other side, and from the bedroom the cat of the house sits in a corridor now and then. Players take turns. |
+| `little_6502_guy.asm` | **Little 6502 Guy** | 1 | An original life-sim toy: Six, a tiny technician, lives in a three-floor house built on the 6502 chip of your miniVIC, with Byte, his black cat. He eats, drinks, takes baths, sleeps, reads, plays records, rides the exercise bike, tinkers in the workshop and types letters to you, all on his own and by the clock of the house. Bring food and water, fill Byte's bowl, send gifts, knock on the glass, ask him (nicely: please helps) to do something, play HI-LO BITS with him (guess if the next 8-bit number is higher or lower, lit up in binary) and read his letters. Every new house gets a different character. Nobody wins or loses: the house is saved on the SD and goes on the next day. |
 
 Each source file starts with a header describing controls, rules and technical notes.
 
@@ -360,6 +361,12 @@ Captured with the miniVIC emulator in [`tools`](tools): title screen and gamepla
 <p align="center">
   <img src="screenshots/robo_vac_title.png" width="45%" />
   <img src="screenshots/robo_vac_game.png" width="45%" />
+</p>
+
+### Little 6502 Guy
+<p align="center">
+  <img src="screenshots/little_6502_guy_title.png" width="45%" />
+  <img src="screenshots/little_6502_guy_game.png" width="45%" />
 </p>
 
 ---
