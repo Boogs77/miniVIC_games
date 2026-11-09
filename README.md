@@ -52,6 +52,7 @@ A collection of arcade games written in **65C02 assembly** for the **Boogs77-min
 | `zork3_joy.asm` | **Zork III (joystick)** | 1 | The same story, with the sentences made of words chosen from menus with the joystick. |
 | `robo_vac.asm` | **Robo Vac** | 1–2 | An original maze-chase game: a little robot vacuum cleans the house room by room, from the kitchen to the attic, 8 rooms and then the house again, faster. Four dust bunnies hunt it: Fluff follows it, Lint cuts it off, Fuzz dashes when it sees it, Grit guards the wall sockets. Every socket gives a few seconds of turbo, when the bunnies turn pale and the robot sucks them up for 200, 400, 800 and 1600 points; a sucked-up bunny flies home as a pair of eyes and rests a few seconds in the laundry basket before it comes out again. Lost things show up under the laundry basket, the passage under the doors leads to the other side, and from the bedroom the cat of the house sits in a corridor now and then. Players take turns. |
 | `little_6502_guy.asm` | **Little 6502 Guy** | 1 | An original life-sim toy: Six, a tiny technician, lives in a three-floor house built on the 6502 chip of your miniVIC, with Byte, his black cat. He eats, drinks, takes baths, sleeps, reads, plays piano records and dances, rides the exercise bike, tinkers in the workshop and types letters to you, all on his own and by the clock of the house. Bring food and water, fill Byte's bowl, send gifts, knock on the glass, ask him (nicely: please helps) to do something, play HI-LO BITS with him (guess if the next 8-bit number is higher or lower, lit up in binary) and read his letters. In a new house Six first knocks at the door and looks around every room before he decides to move in, and every new house gives him a different character. Nobody wins or loses: the house is saved on the SD and goes on the next day. |
+| `hedge_hop.asm` | **Hedge Hop** | 1–2 | An original crossing game: Spike the hedgehog goes home to the hedge. First a country road with a milk truck, motorbikes, cars and tractors, then a stream crossed on floating logs and lily pads, some of which go under now and then. One hop a lane, 30 seconds a hedgehog, five holes in the hedge to fill. A beetle in a hole and a little hedgehog waiting on a log are worth more; from level 2 a fox trots on the bank, from level 3 a heron lands in the hedge, from level 4 a snake walks on the logs. Morning, afternoon, sunset and night, then morning again, faster. Players take turns. |
 
 Each source file starts with a header describing controls, rules and technical notes.
 
@@ -367,6 +368,12 @@ Captured with the miniVIC emulator in [`tools`](tools): title screen and gamepla
 <p align="center">
   <img src="screenshots/little_6502_guy_title.png" width="45%" />
   <img src="screenshots/little_6502_guy_game.png" width="45%" />
+</p>
+
+### Hedge Hop
+<p align="center">
+  <img src="screenshots/hedge_hop_title.png" width="45%" />
+  <img src="screenshots/hedge_hop_game.png" width="45%" />
 </p>
 
 ---
