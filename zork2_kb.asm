@@ -11,7 +11,7 @@
 ;   - needs the BIOS KEYB/SD (SD sectors, keyboard)            ;
 ;   - the story files are Zork I-III by Infocom, released under ;
 ;     the MIT License (c) 2025 Microsoft                       ;
-;   - saved game: zone 36 of the SD save area                  ;
+;   - 3 saved games: zones 36, 46, 47 of the SD save area      ;
 ;                                                              ;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -3630,16 +3630,47 @@ IN_HELP:
 MSG_HELPK:   .byte "UP ARROW = THE LAST COMMAND AGAIN",0
 MSG_NOSD:    .byte "NO SD CARD - PRESS A KEY",0
 MSG_END:     .byte "[THE END - PRESS A KEY]",0
+
+; IN_PICK: the place of SAVE / RESTORE: a key 1-3 (another key: none). A = 0-2, C = 1 none
+IN_PICK:
+  LDA #<MSG_PICK
+  LDY #>MSG_PICK
+  JSR PUTSTR
+  JSR GETKEY
+  CMP #'1'
+  BCC .ip_no
+  CMP #'4'
+  BCS .ip_no
+  PHA                    ; the key, on the screen
+  STA SV_NBUF
+  STZ SV_NBUF+1
+  LDA #<SV_NBUF
+  LDY #>SV_NBUF
+  JSR PUTSTR
+  PLA
+  SEC
+  SBC #'1'
+  CLC
+  RTS
+.ip_no:
+  SEC
+  RTS
+MSG_PICK:    .byte "WHICH PLACE (1-3)? ",0
 ; ===============================================================
-;  SAVE / RESTORE: one saved game per story on the SD
+;  SAVE / RESTORE: three saved games per story on the SD
 ; ===============================================================
-; Zone SAVE_ZONE of the save area: sector 2 = header, sectors
+; SAVE and RESTORE list the 3 places (score and moves, or EMPTY)
+; and ask for one (IN_PICK: a key 1-3, or the joystick).
+; Place 1 = zone SAVE_ZONE (35-37, as before), places 2 and 3 =
+; zones 2 x SAVE_ZONE - 26 and - 25 (44-49).
+; A zone of the save area: sector 2 = header, sectors
 ; 3-15 = data (6.5 KB): the Z stack, then the dynamic memory as
 ; its difference (XOR) from the story on the SD, with the runs of
 ; zeros written as 0, length-1 (like the Quetzal format). The
 ; header is written last, so a broken save is never taken.
 ;   header: "MVST", version 1, zone, release (2), serial (6),
-;   PC (3), FP and ZSP - ZSTACK (2 + 2), data bytes (2), sum (2)
+;   PC (3), FP and ZSP - ZSTACK (2 + 2), data bytes (2), sum (2),
+;   score (2), moves (2)
 ; Both versions of a story (keyboard and joystick) share it.
 
 SV_SEC      = $F0      ; data sector being written / read (0-12)
@@ -3658,6 +3689,10 @@ SV_HDR      = 64       ; bytes of the header written
 
 OP_SAVE:
   JSR SV_FRAMES
+  JSR SV_PICK            ; which place
+  BCC .sv_go
+  JMP .sv_fail
+.sv_go:
   JSR SV_OUTINIT
   ; the Z stack
   LDA #<ZSTACK
@@ -3817,13 +3852,13 @@ SV_FLUSH:
 .sf_x:
   RTS
 
-; SV_LBA: SD_LBA = data sector SV_SEC of the zone
+; SV_LBA: SD_LBA = data sector SV_SEC of the zone of the place chosen
 SV_LBA:
   LDA SV_SEC
-  CLC
-  ADC #<(SAVE_SEC+1)
+  SEC                    ; (+1: the data come after the header)
+  ADC SV_BASE
   STA SD_LBA
-  LDA #>(SAVE_SEC+1)
+  LDA SV_BASE+1
   ADC #0
   STA SD_LBA+1
   STZ SD_LBA+2
@@ -3842,9 +3877,9 @@ SV_READ0:
   PLA
   JMP SD_READ
 SV_LBA0:
-  LDA #<SAVE_SEC
+  LDA SV_BASE
   STA SD_LBA
-  LDA #>SAVE_SEC
+  LDA SV_BASE+1
   STA SD_LBA+1
   STZ SD_LBA+2
   STZ SD_LBA+3
@@ -3922,6 +3957,20 @@ SV_HEADER:
   INY
   LDA SV_SUM+1
   STA (SV_P),Y
+  INY
+  LDA #17                ; the score and the moves (for the list of the places)
+  JSR .sh_var
+  LDA #18
+.sh_var:
+  PHY
+  JSR GETVAR
+  PLY
+  LDA VAL
+  STA (SV_P),Y
+  INY
+  LDA VAL+1
+  STA (SV_P),Y
+  INY
   RTS
 ; SV_HDRDATA: bytes 0-13 of the header (Y = 0 in, 14 out)
 SV_HDRDATA:
@@ -3936,6 +3985,129 @@ SV_SIG:
   .byte "MVST",1,SAVE_ZONE,<ST_REL,>ST_REL
 ST_SERIAL2:
   .byte 0,0,0,0,0,0      ; the serial, copied from ST_SERIAL at the start
+
+; ---------------- the three places ----------------
+SV_BASE:   .word 0       ; header sector of the place chosen (32768 + zone * 16 + 2)
+SV_SLOT:   .byte 0       ; the place shown / chosen (0-2)
+SV_NBUF:   .byte 0,0,0,0,0,0,0,0
+SV_ZTAB:   .byte SAVE_ZONE, SAVE_ZONE*2-26, SAVE_ZONE*2-25
+
+; SV_SETZONE: A = place 0-2: SV_BASE and the zone in the signature
+SV_SETZONE:
+  TAX
+  LDA SV_ZTAB,X
+  STA SV_SIG+5
+  PHA
+  ASL A                  ; zone * 16 + 2
+  ASL A
+  ASL A
+  ASL A
+  CLC
+  ADC #2
+  STA SV_BASE
+  PLA
+  LSR A
+  LSR A
+  LSR A
+  LSR A
+  CLC
+  ADC #$80               ; (32768 = $8000)
+  STA SV_BASE+1
+  RTS
+
+; SV_PICK: the three places (score and moves, or EMPTY), then IN_PICK asks for one:
+; C = 0 and the zone set (A = place), C = 1 nothing chosen
+SV_PICK:
+  JSR FLUSHW
+  LDA CURCOL             ; on a new row
+  BEQ .pk_l0
+  JSR NEWLINE
+.pk_l0:
+  STZ SV_SLOT
+.pk_l:
+  LDA SV_SLOT
+  JSR SV_SETZONE
+  LDA SV_B               ; its header
+  JSR SV_READ0
+  LDA #<SV_TSLOT
+  LDY #>SV_TSLOT
+  JSR PUTSTR
+  LDA SV_SLOT
+  CLC
+  ADC #'1'
+  STA SV_NBUF
+  STZ SV_NBUF+1
+  LDA #<SV_NBUF
+  LDY #>SV_NBUF
+  JSR PUTSTR
+  LDA SV_B
+  STA SV_P+1
+  STZ SV_P
+  LDY #0
+.pk_sig:
+  LDA (SV_P),Y
+  CMP SV_SIG,Y
+  BNE .pk_empty
+  INY
+  CPY #14
+  BCC .pk_sig
+  LDA #<SV_TSCORE
+  LDY #>SV_TSCORE
+  JSR PUTSTR
+  LDY #25
+  JSR .pk_num
+  LDA #<SV_TMOVES
+  LDY #>SV_TMOVES
+  JSR PUTSTR
+  LDY #27
+  JSR .pk_num
+  BRA .pk_n
+.pk_empty:
+  LDA #<SV_TEMPTY
+  LDY #>SV_TEMPTY
+  JSR PUTSTR
+.pk_n:
+  JSR NEWLINE
+  INC SV_SLOT
+  LDA SV_SLOT
+  CMP #3
+  BCC .pk_l
+  STZ SV_SLOT
+  JSR IN_PICK            ; A = 0-2, C = 1: no
+  PHP
+  PHA
+  JSR NEWLINE
+  PLA
+  PLP
+  BCS .pk_x
+  PHA
+  JSR SV_SETZONE
+  PLA
+  CLC
+.pk_x:
+  RTS
+.pk_num:                 ; the number at byte Y of the header
+  LDA (SV_P),Y
+  STA VAL
+  INY
+  LDA (SV_P),Y
+  STA VAL+1
+  JSR NUMSTR
+  STZ SV_NBUF,X
+.pk_c:
+  DEX
+  BMI .pk_p
+  LDA NUMBUF,X
+  STA SV_NBUF,X
+  BRA .pk_c
+.pk_p:
+  LDA #<SV_NBUF
+  LDY #>SV_NBUF
+  JMP PUTSTR
+SV_TSLOT:  .byte "PLACE ",0
+SV_TSCORE: .byte ": SCORE ",0
+SV_TMOVES: .byte ", MOVES ",0
+SV_TEMPTY: .byte ": EMPTY",0
 
 ; SV_FRAMES: two RAM frames for the buffers (out of the cache until SV_RELEASE)
 SV_FRAMES:
@@ -3970,6 +4142,10 @@ SV_RELEASE:
 ; ---------------- RESTORE ----------------
 OP_RESTORE:
   JSR SV_FRAMES
+  JSR SV_PICK            ; which place
+  BCC .rs_go
+  JMP .rs_fail
+.rs_go:
   LDA SV_B               ; the header
   JSR SV_READ0
   LDA SV_B
