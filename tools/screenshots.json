@@ -41,5 +41,6 @@
   "hedge_hop": [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 300], ["shot", "game"]],
   "mole_hole": [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 300], ["shot", "game"]],
   "lighthouse_keeper": [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 300], ["shot", "game"]],
-  "paint_duel": [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 200], ["shot", "game"]]
+  "paint_duel": [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 200], ["shot", "game"]],
+  "lix": [["wait", 60], ["shot", "title"], ["press", "p1", "fire", 3], ["wait", 330], ["press", "p1", "up+fire", 30], ["press", "p1", "left+fire", 50], ["press", "p1", "down+fire", 40], ["wait", 30], ["press", "p1", "left", 30], ["press", "p1", "up+fire2", 50], ["press", "p1", "right+fire2", 20], ["shot", "game"]]
 }
