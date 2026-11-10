@@ -1943,6 +1943,8 @@ MEM_INIT:
   STZ CLOCK
   STZ CLKH
   STZ VNEXT
+  STZ PCP                ; low bytes of the block pointers: always 0
+  STZ SAP                ; (RAM is not cleared at power-on)
   LDA #$FF
   STA PCF
   STA SAF
