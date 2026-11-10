@@ -80,7 +80,7 @@ The three Zork programs run the **original Infocom story files** (Z-machine vers
 * 40 × 24 text mode with the status line (room, score, moves), word wrapping and `[MORE]`;
 * **keyboard version** (PS/2 keyboard of the BIOS KEYB/SD): type the commands, BACKSPACE / ESC to correct, UP brings the last command back;
 * **joystick version**: the sentence is made of words chosen from lists at the bottom of the screen. UP / DOWN choose the list (GO, VERBS, HERE = the nouns on the screen, WORDS, ALL = the whole dictionary, GAME = look, inventory, save ...), LEFT / RIGHT the word, button 1 adds it (a direction or a game command alone is sent at once), button 2 sends the sentence; hold button 2 with UP to take the last word away, DOWN to clear, LEFT / RIGHT to jump to the previous / next letter. Digits join into numbers;
-* **SAVE** and **RESTORE** use one slot per story on the SD card (save zones 35, 36, 37), shared by the two versions; `$VERIFY` checks the story on the card;
+* **SAVE** and **RESTORE** keep three saved games per story on the SD card (save zones 35-37 and 44-49), shared by the two versions: they list the three places with score and moves and ask which one (keys 1-3, or UP / DOWN and button 1; button 2 cancels); `$VERIFY` checks the story on the card;
 * the story files come from [historicalsource/zork1](https://github.com/historicalsource/zork1), [zork2](https://github.com/historicalsource/zork2) and [zork3](https://github.com/historicalsource/zork3), released under the **MIT License** (c) 2025 Microsoft; they are written on the SD card unchanged, together with their licence.
 
 ---
