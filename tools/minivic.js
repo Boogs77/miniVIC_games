@@ -382,6 +382,16 @@ class VDP {
 class MiniVIC {
   constructor(bin, loadAddr = 0x0FD0, start = 0x1000, opts = {}) {
     this.mem = new Uint8Array(0x10000);
+    // opts.ram (or env MINIVIC_RAM) = seed: RAM full of random bytes at power-on, like the real chips
+    // ($0050-$7FFF except $0300-$04FF of the BIOS); without it the RAM starts at 0
+    const ramSeed = opts.ram !== undefined ? opts.ram : process.env.MINIVIC_RAM;
+    if (ramSeed !== undefined && ramSeed !== '') {
+      let r = (+ramSeed >>> 0) || 1;
+      for (let a = 0x0050; a < 0x8000; a++) {
+        r ^= r << 13; r >>>= 0; r ^= r >>> 17; r ^= r << 5; r >>>= 0;
+        if (a < 0x0300 || a >= 0x0500) this.mem[a] = r & 0xFF;
+      }
+    }
     this.mem.set(bin, loadAddr);
     // stub of the NMI handler of the BIOS
     const stub = [0x48, 0xDA, 0x5A, 0x20, 0xD0, 0x0F, 0xAD, 0x01, 0xB0, 0x7A, 0xFA, 0x68, 0x40];
