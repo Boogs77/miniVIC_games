@@ -58,6 +58,7 @@ A collection of arcade games written in **65C02 assembly** for the **Boogs77-min
 | `paint_duel.asm` | **Paint Duel** | 1–2 | An original paint-trail duel: two painters push their rollers over a polished floor, and every roller leaves a stripe of wet paint behind. The rollers never stop; the joystick turns them left or right. Roll into wet paint (yours or the other's), the skirting board, a paint can or the table and the round is lost. The button gives a short sprint, three a round. Four rooms in turn, a little faster every two rounds; the first to five rounds wins. One player against the CPU or two players at the same time; the record is the most wins in a row against the CPU. |
 | `lix.asm` | **Lix** | 1–2 | An original territory game: Flora the gardener runs along the hedges of a wild lawn and plants new hedge in the tall grass. When the new hedge meets the old one, the part without the tornado becomes a flower bed. Hold button 1 for a fast hedge, button 2 for a slow one that is worth double. The tornado pulls up an unfinished hedge, the mad shears chase Flora along the hedges, and if she stands still a caterpillar eats the new hedge up to her; when the timer runs out the shears turn red and follow the new hedge too. Tidy 75% of the lawn to go on; four seasons in turn, two tornadoes from lawn 3 (split them for a bonus). Players take turns. |
 | `cheese_chase.asm` | **Cheese Chase** | 1–2 | An original digging puzzle platformer: at night Squeak the mouse steals the cheese wheels of a dairy, on floors of wooden planks and stone joined by ladders and milk pipes to hang on. Button 1 gnaws a hole in the planks on the left, button 2 on the right: the hole closes again after five seconds. A cat that falls into a hole is stuck for a while and drops the cheese it carries; a hole that closes on a cat sends it back to the top, one that closes on Squeak takes a life. Take every wheel and a ladder shows up to the top. 16 levels, then again with faster cats; 5 lives, one more at every level done. Hold both buttons to give up a level. Players take turns. |
+| `haunted_keep.asm` | **Haunted Keep** | 1–2 | An original maze shooter: Sir Bram the knight walks the 64 halls of a haunted castle, seen from above. Hold a button and push a direction to shoot an arrow in one of eight directions. The suits of armor walk towards him and break on the walls, on each other and under the arrows; from the third hall on they throw axes, more often and faster hall after hall. The walls are cursed: touching them takes a life. Linger too long and a ghost floats in through the walls; an arrow sends it away for a while. Out of a door to the next hall, the door behind is barred. A bonus for every hall cleared; 3 lives, one more every 5000 points. Players take turns. |
 
 Each source file starts with a header describing controls, rules and technical notes.
 
@@ -409,6 +410,12 @@ Captured with the miniVIC emulator in [`tools`](tools): title screen and gamepla
 <p align="center">
   <img src="screenshots/cheese_chase_title.png" width="45%" />
   <img src="screenshots/cheese_chase_game.png" width="45%" />
+</p>
+
+### Haunted Keep
+<p align="center">
+  <img src="screenshots/haunted_keep_title.png" width="45%" />
+  <img src="screenshots/haunted_keep_game.png" width="45%" />
 </p>
 
 ---
