@@ -60,6 +60,7 @@ A collection of arcade games written in **65C02 assembly** for the **Boogs77-min
 | `cheese_chase.asm` | **Cheese Chase** | 1–2 | An original digging puzzle platformer: at night Squeak the mouse steals the cheese wheels of a dairy, on floors of wooden planks and stone joined by ladders and milk pipes to hang on. Button 1 gnaws a hole in the planks on the left, button 2 on the right: the hole closes again after five seconds. A cat that falls into a hole is stuck for a while and drops the cheese it carries; a hole that closes on a cat sends it back to the top, one that closes on Squeak takes a life. Take every wheel and a ladder shows up to the top. 16 levels, then again with faster cats; 5 lives, one more at every level done. Hold both buttons to give up a level. Players take turns. |
 | `haunted_keep.asm` | **Haunted Keep** | 1–2 | An original maze shooter: Sir Bram the knight walks the 64 halls of a haunted castle, seen from above. Hold a button and push a direction to shoot an arrow in one of eight directions. The suits of armor walk towards him and break on the walls, on each other and under the arrows; from the third hall on they throw axes, more often and faster hall after hall. The walls are cursed: touching them takes a life. Linger too long and a ghost floats in through the walls; an arrow sends it away for a while. Out of a door to the next hall, the door behind is barred. A bonus for every hall cleared; 3 lives, one more every 5000 points. Players take turns. |
 | `pastry_panic.asm` | **Pastry Panic** | 1–2 | An original platform game: Chef Pip builds four cakes in a pastry shop of shelves and ladders. Walk over a cake layer (sponge, cream, chocolate, icing) from end to end and it falls to the next shelf; a layer falling on another one pushes it down, and under the last shelf the layers pile up on the plates. Rebel strawberries, bananas and lemons chase him on the shelves and the ladders: a falling layer squashes them, or takes them down for more points. The button shakes icing sugar that stuns the fruit: 5 doses a level, and a cherry now and then gives one more. 6 layouts, then again with more and faster fruit; 3 lives, one more at 10000 points. Players take turns, every one with his own cakes. |
+| `brick_drop.asm` | **Brick Drop** | 1–2 | An original falling-block puzzle game: pieces of four bricks fall into a well of 10 x 20 cells on a building site. Move them, turn them both ways and close the rows of the wall: a full row flashes and goes away, and four rows at once are a BRICK DROP. Seven pieces, the next one in its box and the statistics of every piece beside the well. A level more every 10 rows, faster and with new colours; points for 1-4 rows times the level + 1, and for every row dropped holding down. Choose the start level (0-9) and one of three original tunes (or silence) before the game. Players take turns, one whole game each. |
 
 Each source file starts with a header describing controls, rules and technical notes.
 
@@ -423,6 +424,12 @@ Captured with the miniVIC emulator in [`tools`](tools): title screen and gamepla
 <p align="center">
   <img src="screenshots/pastry_panic_title.png" width="45%" />
   <img src="screenshots/pastry_panic_game.png" width="45%" />
+</p>
+
+### Brick Drop
+<p align="center">
+  <img src="screenshots/brick_drop_title.png" width="45%" />
+  <img src="screenshots/brick_drop_game.png" width="45%" />
 </p>
 
 ---
